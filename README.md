@@ -21,8 +21,8 @@ Powered by a **DenseNet121** deep learning model, the system analyzes uploaded X
 *   **🔍 Visual Explanations (Heatmaps)**: Generates Grad-CAM heatmaps to highlight suspicious regions in the lungs, helping doctors understand *why* a diagnosis was made.
 *   **📄 Automated PDF Reporting**: instantly generates downloadable, professional medical reports containing the diagnosis, confidence score, and visual analysis.
 *   **📊 Interactive Dashboard**: A modern, responsive React-based dashboard for easy patient screening and history tracking.
-*   **☁️ Cloud Database**: Integrated with **Supabase** for secure user authentication and screening history logs.
-*   **🔒 Secure Auth**: robust Login/Signup system to secure patient data.
+*   **💾 Local Database**: Uses **SQLite** for lightweight, zero-config storage of user accounts and screening history logs.
+*   **🔒 Secure Auth**: Robust Login/Signup system to secure patient data.
 
 ---
 
@@ -43,7 +43,7 @@ The system follows a modern decoupled architecture:
 | 3 | Backend API | Preprocessing | Flask server receives the image, validates the format, and converts it into a numerical Tensor. |
 | 4 | AI Engine | Inference | A pre-trained DenseNet121 model analyzes image features to calculate risk probability. |
 | 5 | Explainability | Generates Heatmap | Grad-CAM extracts feature maps to visualize the specific regions influencing the AI's decision. |
-| 6 | Database | Logging | Prediction results, metadata, and timestamps are securely stored in Supabase (Postgres). |
+| 6 | Database | Logging | Prediction results, metadata, and timestamps are stored in a local SQLite database. |
 | 7 | Frontend | Display & Report | Dashboard updates with the diagnosis and heatmap; a PDF Report is generated for the patient. |
 
 <br>
@@ -53,7 +53,7 @@ The system follows a modern decoupled architecture:
 | **🎨 Frontend** | **React + Vite + Tailwind** | Responsive UI, state management, and PDF generation. |
 | **⚙️ Backend** | **Flask (Python)** | REST API, Business logic, and AI model orchestration. |
 | **🧠 AI Model** | **PyTorch + DenseNet121** | Deep learning operations and image classification. |
-| **💾 Database** | **Supabase (PostgreSQL)** | Persistent storage for user auth and screening logs. |
+| **💾 Database** | **SQLite** | Lightweight local storage for user auth and screening logs. |
 
 ---
 
