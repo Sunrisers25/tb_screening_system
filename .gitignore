@@ -1,0 +1,74 @@
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ============================================================
+# Databases (SQLite - may contain sensitive patient data)
+# ============================================================
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================================
+# Sensitive / Runtime files
+# ============================================================
+session.json
+*.log
+*.env
+.env
+.env.*
+!.env.example
+
+# ============================================================
+# AI Model weights (large binary files - distribute separately)
+# ============================================================
+*.pt
+*.pth
+*.h5
+*.pkl
+*.bin
+
+# ============================================================
+# Frontend - Node / Vite
+# ============================================================
+frontend_lovable/vitri-scan-ui-main/node_modules/
+frontend_lovable/vitri-scan-ui-main/dist/
+frontend_lovable/vitri-scan-ui-main/dist-ssr/
+frontend_lovable/vitri-scan-ui-main/*.local
+
+# ============================================================
+# OS & Editor
+# ============================================================
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ============================================================
+# Static uploads (generated at runtime)
+# ============================================================
+static/uploads/
+static/heatmaps/
+static/reports/

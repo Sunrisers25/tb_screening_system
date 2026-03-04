@@ -1,0 +1,12 @@
+streamlit
+torch
+torchvision
+opencv-python
+pillow
+numpy
+matplotlib
+
+supabase
+flask
+flask-cors
+fpdf
