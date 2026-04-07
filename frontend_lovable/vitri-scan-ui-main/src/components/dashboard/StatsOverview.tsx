@@ -1,4 +1,5 @@
-import { FileSearch, AlertTriangle, CheckCircle2, TrendingUp } from "lucide-react";
+import { FileSearch, AlertTriangle, CheckCircle2, TrendingUp, Users } from "lucide-react";
+import { useEffect, useState } from "react";
 
 interface StatCardProps {
   icon: React.ElementType;
@@ -21,34 +22,63 @@ const StatCard = ({ icon: Icon, label, value, subtitle, accentClass }: StatCardP
   </div>
 );
 
+interface StatsData {
+  total_screenings: number;
+  high_risk: number;
+  low_risk: number;
+  moderate_risk: number;
+  avg_confidence: number;
+  this_week: number;
+  patient_count: number;
+}
+
 const StatsOverview = () => {
+  const [statsData, setStatsData] = useState<StatsData | null>(null);
+
+  useEffect(() => {
+    fetch("http://localhost:5000/api/stats")
+      .then((res) => res.json())
+      .then((data) => setStatsData(data))
+      .catch(console.error);
+  }, []);
+
+  const total = statsData?.total_screenings || 0;
+  const highRisk = statsData?.high_risk || 0;
+  const lowRisk = statsData?.low_risk || 0;
+  const avgConf = statsData?.avg_confidence || 0;
+  const thisWeek = statsData?.this_week || 0;
+  const patientCount = statsData?.patient_count || 0;
+
+  const highPercent = total > 0 ? ((highRisk / total) * 100).toFixed(1) : "0";
+  const lowPercent = total > 0 ? ((lowRisk / total) * 100).toFixed(1) : "0";
+
   const stats: StatCardProps[] = [
     {
       icon: FileSearch,
       label: "Total Screenings",
-      value: 1284,
-      subtitle: "+12 this week",
+      value: total,
+      subtitle: `+${thisWeek} this week`,
       accentClass: "bg-primary/10 text-primary",
     },
     {
       icon: AlertTriangle,
       label: "High Risk Detected",
-      value: 83,
-      subtitle: "6.5% of total",
+      value: highRisk,
+      subtitle: `${highPercent}% of total`,
       accentClass: "bg-destructive/10 text-destructive",
     },
     {
       icon: CheckCircle2,
       label: "Low Risk",
-      value: 1201,
-      subtitle: "93.5% of total",
+      value: lowRisk,
+      subtitle: `${lowPercent}% of total`,
       accentClass: "bg-success/10 text-success",
     },
     {
-      icon: TrendingUp,
-      label: "Avg. Confidence",
-      value: "94.2%",
-      subtitle: "Across all screenings",
+      icon: Users,
+      label: "Registered Patients",
+      value: patientCount,
+      subtitle: `Avg. confidence: ${avgConf}%`,
       accentClass: "bg-accent/10 text-accent",
     },
   ];

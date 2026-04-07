@@ -1,8 +1,9 @@
 import { Link, useLocation } from "react-router-dom";
-import { Activity, LayoutDashboard, History, Settings, LogOut } from "lucide-react";
+import { Activity, LayoutDashboard, History, Settings, LogOut, Users } from "lucide-react";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard?view=overview" },
+  { icon: Users, label: "Patients", href: "/dashboard?view=patients" },
   { icon: History, label: "History", href: "/dashboard?view=history" },
   { icon: Settings, label: "Settings", href: "/dashboard?view=settings" },
 ];

@@ -10,17 +10,23 @@ interface ResultsCardProps {
     timestamp: string;
     heatmap?: string;
     notes?: string;
+    dicom_metadata?: {
+      patient_name?: string;
+      study_date?: string;
+      modality?: string;
+      institution?: string;
+    };
   } | null;
 }
 
 const ResultsCard = ({ result }: ResultsCardProps) => {
-  const generatePDF = () => {
+  const generatePDF = async () => {
     if (!result) return;
 
     const doc = new jsPDF();
 
     // Header
-    doc.setFillColor(41, 128, 185); // Blue header
+    doc.setFillColor(41, 128, 185);
     doc.rect(0, 0, 210, 40, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
@@ -29,40 +35,93 @@ const ResultsCard = ({ result }: ResultsCardProps) => {
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(12);
 
-    // Patient Info (Mock)
+    // Report Info
     doc.text(`Report ID: ${Math.random().toString(36).substr(2, 9).toUpperCase()}`, 20, 55);
     doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 62);
     doc.text(`Time: ${result.timestamp}`, 20, 69);
 
+    // DICOM metadata if available
+    let yPos = 69;
+    if (result.dicom_metadata) {
+      yPos += 10;
+      doc.setFontSize(14);
+      doc.text("DICOM Information", 20, yPos);
+      doc.setFontSize(11);
+      yPos += 8;
+      if (result.dicom_metadata.modality) {
+        doc.text(`Modality: ${result.dicom_metadata.modality}`, 20, yPos);
+        yPos += 7;
+      }
+      if (result.dicom_metadata.institution) {
+        doc.text(`Institution: ${result.dicom_metadata.institution}`, 20, yPos);
+        yPos += 7;
+      }
+      if (result.dicom_metadata.study_date) {
+        doc.text(`Study Date: ${result.dicom_metadata.study_date}`, 20, yPos);
+        yPos += 7;
+      }
+    }
+
     // Results
+    yPos += 8;
     doc.setFontSize(16);
-    doc.text("Analysis Results", 20, 85);
+    doc.text("Analysis Results", 20, yPos);
+    yPos += 10;
 
     doc.setFontSize(12);
-    doc.text(`Risk Assessment: ${result.risk?.toUpperCase()} RISK`, 20, 95);
-    doc.text(`Confidence Score: ${result.confidence}%`, 20, 102);
-
-    let currentY = 115;
+    doc.text(`Risk Assessment: ${result.risk?.toUpperCase()} RISK`, 20, yPos);
+    yPos += 7;
+    doc.text(`Confidence Score: ${result.confidence}%`, 20, yPos);
+    yPos += 10;
 
     // Clinical Notes
     if (result.notes) {
-      doc.text("Clinical Findings:", 20, currentY);
-      currentY += 7;
+      doc.text("Clinical Findings:", 20, yPos);
+      yPos += 7;
       doc.setFontSize(10);
       const splitNotes = doc.splitTextToSize(result.notes, 170);
-      doc.text(splitNotes, 20, currentY);
-      currentY += (splitNotes.length * 5) + 10;
+      doc.text(splitNotes, 20, yPos);
+      yPos += splitNotes.length * 5 + 10;
       doc.setFontSize(12);
     }
 
     // Heatmap Image
     if (result.heatmap) {
-      doc.text("AI Explanation (Heatmap Analysis):", 20, currentY);
+      doc.text("AI Explanation (Heatmap Analysis):", 20, yPos);
       try {
-        doc.addImage(`data:image/png;base64,${result.heatmap}`, "PNG", 20, currentY + 5, 100, 100);
+        doc.addImage(`data:image/png;base64,${result.heatmap}`, "PNG", 20, yPos + 5, 100, 100);
+        yPos += 110;
       } catch (e) {
         console.error("Error adding image to PDF", e);
       }
+    }
+
+    // Try to add doctor's digital signature
+    try {
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        if (user.email) {
+          const sigResponse = await fetch(`http://localhost:5000/api/auth/signature/${user.email}`);
+          const sigData = await sigResponse.json();
+          if (sigData.success && sigData.signature) {
+            const sigY = 240;
+            doc.setDrawColor(150, 150, 150);
+            doc.line(20, sigY, 100, sigY);
+            try {
+              doc.addImage(sigData.signature, "PNG", 30, sigY - 22, 50, 20);
+            } catch (e) {
+              console.error("Error adding signature to PDF", e);
+            }
+            doc.setFontSize(10);
+            doc.setTextColor(60, 60, 60);
+            doc.text(`Digitally Signed by Dr. ${sigData.username || user.name}`, 20, sigY + 6);
+            doc.text(`Date: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, 20, sigY + 12);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching signature for PDF", e);
     }
 
     // Disclaimer
@@ -131,6 +190,20 @@ const ResultsCard = ({ result }: ResultsCardProps) => {
             <p className="text-sm text-muted-foreground">TB Detection Result</p>
           </div>
         </div>
+
+        {/* DICOM Metadata Badge */}
+        {result.dicom_metadata && (
+          <div className="mb-4 p-3 bg-accent/5 rounded-lg border border-accent/20">
+            <p className="text-xs font-semibold text-accent mb-1 flex items-center gap-1">
+              📋 DICOM Source Data
+            </p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              {result.dicom_metadata.modality && <p>Modality: <span className="text-foreground">{result.dicom_metadata.modality}</span></p>}
+              {result.dicom_metadata.study_date && <p>Study: <span className="text-foreground">{result.dicom_metadata.study_date}</span></p>}
+              {result.dicom_metadata.institution && <p>Institution: <span className="text-foreground">{result.dicom_metadata.institution}</span></p>}
+            </div>
+          </div>
+        )}
 
         {/* Heatmap Visualization */}
         {result.heatmap && (

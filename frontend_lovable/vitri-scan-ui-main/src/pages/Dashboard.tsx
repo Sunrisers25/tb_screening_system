@@ -5,6 +5,7 @@ import StatsOverview from "@/components/dashboard/StatsOverview";
 import FileUpload, { PatientMetadata } from "@/components/dashboard/FileUpload";
 import ResultsCard from "@/components/dashboard/ResultsCard";
 import HistoryTable from "@/components/dashboard/HistoryTable";
+import PatientProfiles from "@/components/dashboard/PatientProfiles";
 import { Activity, Menu, X } from "lucide-react";
 import Settings from "@/components/dashboard/Settings";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ const Dashboard = () => {
     timestamp: string;
     heatmap?: string;
     notes?: string;
+    dicom_metadata?: any;
   } | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchParams] = useSearchParams();
@@ -24,6 +26,7 @@ const Dashboard = () => {
   const getTitle = () => {
     switch (currentView) {
       case "history": return "Screening History";
+      case "patients": return "Patient Profiles";
       case "settings": return "Settings";
       default: return "Dashboard";
     }
@@ -32,6 +35,7 @@ const Dashboard = () => {
   const getSubtitle = () => {
     switch (currentView) {
       case "history": return "View past screening records";
+      case "patients": return "Manage patient records and medical history";
       case "settings": return "Manage application preferences";
       default: return "Upload chest X-rays for TB risk assessment";
     }
@@ -43,10 +47,11 @@ const Dashboard = () => {
     formData.append("patientName", metadata.name);
     formData.append("age", metadata.age);
     formData.append("gender", metadata.gender);
+    if (metadata.patientId) {
+      formData.append("patientId", metadata.patientId);
+    }
 
     try {
-      // Show loading state implicitly by maybe clearing previous result or showing a toast
-      // For now, we just fetch
       const response = await fetch("http://localhost:5000/api/predict", {
         method: "POST",
         body: formData,
@@ -60,11 +65,12 @@ const Dashboard = () => {
       }
 
       setResult({
-        risk: data.risk as "high" | "low" | "moderate", // Cast to match type
+        risk: data.risk as "high" | "low" | "moderate",
         confidence: data.confidence,
         timestamp: data.timestamp,
         heatmap: data.heatmap,
         notes: data.notes,
+        dicom_metadata: data.dicom_metadata || undefined,
       });
 
     } catch (error) {
@@ -122,6 +128,10 @@ const Dashboard = () => {
 
           {currentView === "history" && (
             <HistoryTable />
+          )}
+
+          {currentView === "patients" && (
+            <PatientProfiles />
           )}
 
           {currentView === "settings" && (

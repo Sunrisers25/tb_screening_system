@@ -9,14 +9,31 @@ SESSION_FILE = "session.json"
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 def init_db():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # Create screenings table
+
+        # ── Patients Table ──
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS patients (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                age INTEGER,
+                gender TEXT,
+                contact_phone TEXT,
+                contact_email TEXT,
+                medical_history TEXT,
+                symptoms TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        ''')
+
+        # ── Screenings Table ──
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS screenings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,55 +46,222 @@ def init_db():
                 patient_name TEXT,
                 age INTEGER,
                 gender TEXT,
-                notes TEXT
+                notes TEXT,
+                patient_id INTEGER,
+                FOREIGN KEY (patient_id) REFERENCES patients(id)
             )
         ''')
-        
-        # Check and migrate if columns are missing (for existing dbs)
+
+        # ── Auto-migration for screenings ──
         cursor.execute("PRAGMA table_info(screenings)")
         columns = [info[1] for info in cursor.fetchall()]
-        
+
         if 'patient_name' not in columns:
-            print("Migrating: Adding patient_name column")
             cursor.execute("ALTER TABLE screenings ADD COLUMN patient_name TEXT")
         if 'age' not in columns:
-            print("Migrating: Adding age column")
             cursor.execute("ALTER TABLE screenings ADD COLUMN age INTEGER")
         if 'gender' not in columns:
-            print("Migrating: Adding gender column")
             cursor.execute("ALTER TABLE screenings ADD COLUMN gender TEXT")
         if 'notes' not in columns:
-            print("Migrating: Adding notes column")
             cursor.execute("ALTER TABLE screenings ADD COLUMN notes TEXT")
-            
-        # Create users table
+        if 'patient_id' not in columns:
+            print("Migrating: Adding patient_id column to screenings")
+            cursor.execute("ALTER TABLE screenings ADD COLUMN patient_id INTEGER REFERENCES patients(id)")
+
+        # ── Users Table ──
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS app_users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
-                username TEXT NOT NULL
+                username TEXT NOT NULL,
+                signature_data TEXT
             )
         ''')
-        
+
+        # ── Auto-migration for app_users ──
+        cursor.execute("PRAGMA table_info(app_users)")
+        user_columns = [info[1] for info in cursor.fetchall()]
+
+        if 'signature_data' not in user_columns:
+            print("Migrating: Adding signature_data column to app_users")
+            cursor.execute("ALTER TABLE app_users ADD COLUMN signature_data TEXT")
+
         conn.commit()
         conn.close()
         print("Database initialized (SQLite).")
     except Exception as e:
         print(f"Database Init Error: {e}")
 
-def log_result(filename, probability, result, original_path=None, heatmap_path=None, patient_name="Unknown", age=None, gender=None, notes=None):
+
+# ══════════════════════════════════════════
+#  PATIENT CRUD
+# ══════════════════════════════════════════
+
+def create_patient(name, age=None, gender=None, contact_phone=None, contact_email=None, medical_history=None, symptoms=None):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        now = datetime.datetime.now().isoformat()
+
+        # symptoms should be a JSON string (list of symptom strings)
+        if isinstance(symptoms, list):
+            symptoms = json.dumps(symptoms)
+
+        cursor.execute('''
+            INSERT INTO patients (name, age, gender, contact_phone, contact_email, medical_history, symptoms, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (name, age, gender, contact_phone, contact_email, medical_history, symptoms, now, now))
+
+        patient_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return True, patient_id
+    except Exception as e:
+        print(f"Create Patient Error: {e}")
+        return False, str(e)
+
+
+def get_patient(patient_id):
+    try:
+        conn = get_db_connection()
+        patient = conn.execute('SELECT * FROM patients WHERE id = ?', (patient_id,)).fetchone()
+        if not patient:
+            conn.close()
+            return None
+
+        patient_dict = dict(patient)
+
+        # Parse symptoms JSON
+        if patient_dict.get('symptoms'):
+            try:
+                patient_dict['symptoms'] = json.loads(patient_dict['symptoms'])
+            except json.JSONDecodeError:
+                pass
+
+        # Get screening history for this patient
+        screenings = conn.execute(
+            'SELECT * FROM screenings WHERE patient_id = ? ORDER BY id DESC', (patient_id,)
+        ).fetchall()
+        patient_dict['screenings'] = [dict(s) for s in screenings]
+
+        conn.close()
+        return patient_dict
+    except Exception as e:
+        print(f"Get Patient Error: {e}")
+        return None
+
+
+def get_all_patients(search_query=None):
+    try:
+        conn = get_db_connection()
+
+        if search_query:
+            patients = conn.execute(
+                'SELECT * FROM patients WHERE name LIKE ? OR contact_email LIKE ? ORDER BY updated_at DESC',
+                (f'%{search_query}%', f'%{search_query}%')
+            ).fetchall()
+        else:
+            patients = conn.execute('SELECT * FROM patients ORDER BY updated_at DESC').fetchall()
+
+        results = []
+        for p in patients:
+            p_dict = dict(p)
+            if p_dict.get('symptoms'):
+                try:
+                    p_dict['symptoms'] = json.loads(p_dict['symptoms'])
+                except json.JSONDecodeError:
+                    pass
+
+            # Get last screening info
+            last_screening = conn.execute(
+                'SELECT risk, probability, timestamp FROM screenings WHERE patient_id = ? ORDER BY id DESC LIMIT 1',
+                (p_dict['id'],)
+            ).fetchone()
+            if last_screening:
+                p_dict['last_screening'] = dict(last_screening)
+            else:
+                p_dict['last_screening'] = None
+
+            # Get screening count
+            count = conn.execute(
+                'SELECT COUNT(*) as count FROM screenings WHERE patient_id = ?',
+                (p_dict['id'],)
+            ).fetchone()
+            p_dict['screening_count'] = count['count'] if count else 0
+
+            results.append(p_dict)
+
+        conn.close()
+        return results
+    except Exception as e:
+        print(f"Get All Patients Error: {e}")
+        return []
+
+
+def update_patient(patient_id, **kwargs):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Build dynamic update query
+        allowed_fields = ['name', 'age', 'gender', 'contact_phone', 'contact_email', 'medical_history', 'symptoms']
+        updates = []
+        values = []
+
+        for field in allowed_fields:
+            if field in kwargs and kwargs[field] is not None:
+                val = kwargs[field]
+                if field == 'symptoms' and isinstance(val, list):
+                    val = json.dumps(val)
+                updates.append(f"{field} = ?")
+                values.append(val)
+
+        if not updates:
+            conn.close()
+            return False, "No fields to update"
+
+        updates.append("updated_at = ?")
+        values.append(datetime.datetime.now().isoformat())
+        values.append(patient_id)
+
+        query = f"UPDATE patients SET {', '.join(updates)} WHERE id = ?"
+        cursor.execute(query, values)
+        conn.commit()
+        conn.close()
+        return True, "Patient updated successfully"
+    except Exception as e:
+        print(f"Update Patient Error: {e}")
+        return False, str(e)
+
+
+def search_patients(query):
+    return get_all_patients(search_query=query)
+
+
+# ══════════════════════════════════════════
+#  SCREENING LOGS
+# ══════════════════════════════════════════
+
+def log_result(filename, probability, result, original_path=None, heatmap_path=None,
+               patient_name="Unknown", age=None, gender=None, notes=None, patient_id=None):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         timestamp = datetime.datetime.now().isoformat()
-        
-        # Note: Using 'result' column as per existing schema, mapping 'risk' arg to it
+
         cursor.execute('''
-            INSERT INTO screenings (filename, result, probability, timestamp, original_path, heatmap_path, patient_name, age, gender, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (filename, result, probability, timestamp, original_path, heatmap_path, patient_name, age, gender, notes))
-        
+            INSERT INTO screenings (filename, result, probability, timestamp, original_path, heatmap_path,
+                                    patient_name, age, gender, notes, patient_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (filename, result, probability, timestamp, original_path, heatmap_path,
+              patient_name, age, gender, notes, patient_id))
+
+        # Update patient's updated_at if linked
+        if patient_id:
+            cursor.execute("UPDATE patients SET updated_at = ? WHERE id = ?",
+                           (timestamp, patient_id))
+
         conn.commit()
         conn.close()
         return True
@@ -85,24 +269,25 @@ def log_result(filename, probability, result, original_path=None, heatmap_path=N
         print(f"Log Error: {e}")
         return False
 
+
 def get_logs():
     try:
         conn = get_db_connection()
         logs = conn.execute('SELECT * FROM screenings ORDER BY id DESC').fetchall()
         conn.close()
-        
+
         results = []
         for log in logs:
             log_dict = dict(log)
-            # Map 'result' column to 'risk' key for frontend compatibility
             if 'result' in log_dict:
                 log_dict['risk'] = log_dict['result']
             results.append(log_dict)
-            
+
         return results
     except Exception as e:
         print(f"Get Logs Error: {e}")
         return []
+
 
 def delete_log(log_id):
     try:
@@ -115,37 +300,95 @@ def delete_log(log_id):
         print(f"Delete Log Error: {e}")
         return False
 
-# --- User Auth ---
+
+# ══════════════════════════════════════════
+#  STATS
+# ══════════════════════════════════════════
+
+def get_stats():
+    try:
+        conn = get_db_connection()
+
+        total = conn.execute('SELECT COUNT(*) as count FROM screenings').fetchone()['count']
+
+        high_risk = conn.execute(
+            "SELECT COUNT(*) as count FROM screenings WHERE result = 'high'"
+        ).fetchone()['count']
+
+        low_risk = conn.execute(
+            "SELECT COUNT(*) as count FROM screenings WHERE result = 'low'"
+        ).fetchone()['count']
+
+        moderate_risk = conn.execute(
+            "SELECT COUNT(*) as count FROM screenings WHERE result = 'moderate'"
+        ).fetchone()['count']
+
+        avg_conf_row = conn.execute(
+            'SELECT AVG(probability) as avg_prob FROM screenings'
+        ).fetchone()
+        avg_confidence = round((avg_conf_row['avg_prob'] or 0) * 100, 1)
+
+        # This week's screenings
+        week_ago = (datetime.datetime.now() - datetime.timedelta(days=7)).isoformat()
+        this_week = conn.execute(
+            'SELECT COUNT(*) as count FROM screenings WHERE timestamp > ?', (week_ago,)
+        ).fetchone()['count']
+
+        # Patient count
+        patient_count = conn.execute('SELECT COUNT(*) as count FROM patients').fetchone()['count']
+
+        conn.close()
+
+        return {
+            'total_screenings': total,
+            'high_risk': high_risk,
+            'low_risk': low_risk,
+            'moderate_risk': moderate_risk,
+            'avg_confidence': avg_confidence,
+            'this_week': this_week,
+            'patient_count': patient_count
+        }
+    except Exception as e:
+        print(f"Stats Error: {e}")
+        return {
+            'total_screenings': 0, 'high_risk': 0, 'low_risk': 0,
+            'moderate_risk': 0, 'avg_confidence': 0, 'this_week': 0, 'patient_count': 0
+        }
+
+
+# ══════════════════════════════════════════
+#  USER AUTH
+# ══════════════════════════════════════════
 
 def create_user(email, password, username):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
+
         try:
-            cursor.execute('INSERT INTO app_users (email, password, username) VALUES (?, ?, ?)', 
-                          (email, password, username))
+            cursor.execute('INSERT INTO app_users (email, password, username) VALUES (?, ?, ?)',
+                           (email, password, username))
             conn.commit()
             conn.close()
             return True, "User registered successfully!"
         except sqlite3.IntegrityError:
             conn.close()
             return False, "User already exists with this email."
-            
+
     except Exception as e:
         return False, f"Registration failed: {str(e)}"
+
 
 def authenticate_user(identifier, password):
     try:
         conn = get_db_connection()
-        # Check email or username
         user = conn.execute('''
-            SELECT * FROM app_users 
+            SELECT * FROM app_users
             WHERE (email = ? OR username = ?) AND password = ?
         ''', (identifier, identifier, password)).fetchone()
-        
+
         conn.close()
-        
+
         if user:
             return True, user['username']
         return False, None
@@ -153,7 +396,42 @@ def authenticate_user(identifier, password):
         print(f"Auth Error: {e}")
         return False, None
 
-# --- Session Management ---
+
+# ══════════════════════════════════════════
+#  DIGITAL SIGNATURE
+# ══════════════════════════════════════════
+
+def save_signature(user_email, signature_b64):
+    try:
+        conn = get_db_connection()
+        conn.execute('UPDATE app_users SET signature_data = ? WHERE email = ?',
+                     (signature_b64, user_email))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Save Signature Error: {e}")
+        return False
+
+
+def get_signature(user_email):
+    try:
+        conn = get_db_connection()
+        user = conn.execute('SELECT signature_data, username FROM app_users WHERE email = ?',
+                            (user_email,)).fetchone()
+        conn.close()
+
+        if user and user['signature_data']:
+            return user['signature_data'], user['username']
+        return None, None
+    except Exception as e:
+        print(f"Get Signature Error: {e}")
+        return None, None
+
+
+# ══════════════════════════════════════════
+#  SESSION MANAGEMENT
+# ══════════════════════════════════════════
 
 def save_local_session(username):
     try:
@@ -161,6 +439,7 @@ def save_local_session(username):
             json.dump({"username": username, "logged_in": True}, f)
     except Exception as e:
         print(f"Session Save Error: {e}")
+
 
 def load_local_session():
     if not os.path.exists(SESSION_FILE):
@@ -173,6 +452,7 @@ def load_local_session():
     except Exception as e:
         print(f"Session Load Error: {e}")
     return False, None
+
 
 def clear_local_session():
     if os.path.exists(SESSION_FILE):

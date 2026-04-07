@@ -10,3 +10,4 @@ supabase
 flask
 flask-cors
 fpdf
+pydicom
