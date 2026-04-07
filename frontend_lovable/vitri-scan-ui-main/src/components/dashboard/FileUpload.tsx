@@ -241,65 +241,94 @@ const FileUpload = ({ onFileSelect }: FileUploadProps) => {
         <span className="text-xs font-normal text-muted-foreground ml-1">(JPG, PNG, or DICOM)</span>
       </h4>
 
-      {!preview ? (
-        <div
-          onDragEnter={handleDragIn}
-          onDragLeave={handleDragOut}
-          onDragOver={handleDrag}
-          onDrop={handleDrop}
-          className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-300 cursor-pointer ${isDragging
-            ? "border-primary bg-primary/5 scale-[1.02]"
-            : "border-border hover:border-primary/50 hover:bg-primary/5"
-            }`}
-        >
-          <input
-            type="file"
-            accept="image/*,.dcm"
-            onChange={handleFileInput}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          />
-          <div className="w-12 h-12 rounded-xl gradient-primary mx-auto mb-3 flex items-center justify-center">
-            <Image className="w-6 h-6 text-primary-foreground" />
+      {/* Check if patient details are filled */}
+      {(() => {
+        const detailsFilled = inputMode === "existing" ? !!selectedPatientId : !!patientName.trim();
+
+        if (!detailsFilled) {
+          return (
+            <div className="border-2 border-dashed rounded-xl p-8 text-center border-border/40 bg-muted/20 opacity-60 cursor-not-allowed">
+              <div className="w-12 h-12 rounded-xl bg-muted mx-auto mb-3 flex items-center justify-center">
+                <Image className="w-6 h-6 text-muted-foreground" />
+              </div>
+              <p className="text-sm text-muted-foreground font-medium mb-1">
+                Enter patient details first
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {inputMode === "existing" ? "Select an existing patient above to continue" : "Fill in the patient name above to enable upload"}
+              </p>
+            </div>
+          );
+        }
+
+        if (!preview) {
+          return (
+            <div
+              onDragEnter={handleDragIn}
+              onDragLeave={handleDragOut}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+              className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-300 cursor-pointer ${isDragging
+                ? "border-primary bg-primary/5 scale-[1.02]"
+                : "border-border hover:border-primary/50 hover:bg-primary/5"
+                }`}
+            >
+              <input
+                type="file"
+                accept="image/*,.dcm"
+                onChange={handleFileInput}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+              <div className="w-12 h-12 rounded-xl gradient-primary mx-auto mb-3 flex items-center justify-center">
+                <Image className="w-6 h-6 text-primary-foreground" />
+              </div>
+              <p className="text-sm text-foreground font-medium mb-1">
+                Drop X-ray here or click to browse
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Supports JPG, PNG, and DICOM (.dcm) files
+              </p>
+            </div>
+          );
+        }
+
+        if (isDicom) {
+          return (
+            <div className="relative rounded-xl overflow-hidden bg-foreground/5 border border-border p-6 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-accent/10 mx-auto mb-3 flex items-center justify-center">
+                <FileText className="w-8 h-8 text-accent" />
+              </div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 text-accent text-xs font-semibold mb-2">
+                📋 DICOM File Detected
+              </div>
+              <p className="text-sm font-medium text-foreground">{file?.name}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Medical imaging file • Metadata will be auto-extracted
+              </p>
+              <div className="absolute top-2 right-2">
+                <Button variant="destructive" size="icon" onClick={clearFile} className="rounded-full h-8 w-8 shadow-md">
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="relative rounded-xl overflow-hidden bg-foreground/5 border border-border">
+            <img
+              src={preview}
+              alt="X-ray preview"
+              className="w-full h-48 object-contain bg-black/20"
+            />
+            <div className="absolute top-2 right-2">
+              <Button variant="destructive" size="icon" onClick={clearFile} className="rounded-full h-8 w-8 shadow-md">
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
-          <p className="text-sm text-foreground font-medium mb-1">
-            Drop X-ray here or click to browse
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Supports JPG, PNG, and DICOM (.dcm) files
-          </p>
-        </div>
-      ) : isDicom ? (
-        <div className="relative rounded-xl overflow-hidden bg-foreground/5 border border-border p-6 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-accent/10 mx-auto mb-3 flex items-center justify-center">
-            <FileText className="w-8 h-8 text-accent" />
-          </div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/10 text-accent text-xs font-semibold mb-2">
-            📋 DICOM File Detected
-          </div>
-          <p className="text-sm font-medium text-foreground">{file?.name}</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Medical imaging file • Metadata will be auto-extracted
-          </p>
-          <div className="absolute top-2 right-2">
-            <Button variant="destructive" size="icon" onClick={clearFile} className="rounded-full h-8 w-8 shadow-md">
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="relative rounded-xl overflow-hidden bg-foreground/5 border border-border">
-          <img
-            src={preview}
-            alt="X-ray preview"
-            className="w-full h-48 object-contain bg-black/20"
-          />
-          <div className="absolute top-2 right-2">
-            <Button variant="destructive" size="icon" onClick={clearFile} className="rounded-full h-8 w-8 shadow-md">
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       <Button
         variant="hero"

@@ -18,6 +18,9 @@ const Dashboard = () => {
     heatmap?: string;
     notes?: string;
     dicom_metadata?: any;
+    patientName?: string;
+    patientAge?: string;
+    patientGender?: string;
   } | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchParams] = useSearchParams();
@@ -71,6 +74,9 @@ const Dashboard = () => {
         heatmap: data.heatmap,
         notes: data.notes,
         dicom_metadata: data.dicom_metadata || undefined,
+        patientName: metadata.name,
+        patientAge: metadata.age,
+        patientGender: metadata.gender,
       });
 
     } catch (error) {

@@ -10,6 +10,9 @@ interface ResultsCardProps {
     timestamp: string;
     heatmap?: string;
     notes?: string;
+    patientName?: string;
+    patientAge?: string;
+    patientGender?: string;
     dicom_metadata?: {
       patient_name?: string;
       study_date?: string;
@@ -24,79 +27,165 @@ const ResultsCard = ({ result }: ResultsCardProps) => {
     if (!result) return;
 
     const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 15;
+    const contentWidth = pageWidth - margin * 2;
+    const reportId = Math.random().toString(36).substr(2, 9).toUpperCase();
 
-    // Header
+    // ════════════════════════════════════════
+    //  PAGE 1 — Header, Patient Info, Results
+    // ════════════════════════════════════════
+
+    // ── Header Bar ──
+    doc.setFillColor(20, 60, 100);
+    doc.rect(0, 0, pageWidth, 35, "F");
+    // Accent stripe
     doc.setFillColor(41, 128, 185);
-    doc.rect(0, 0, 210, 40, "F");
+    doc.rect(0, 35, pageWidth, 3, "F");
+
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.text("TB Screening Report", 20, 25);
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    doc.text("TB Screening Report", margin, 16);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text("AI-Powered Chest X-Ray Analysis", margin, 24);
+    doc.text(`Report ID: ${reportId}`, margin, 30);
 
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(12);
+    // Date on right
+    doc.setFontSize(9);
+    doc.text(`${new Date().toLocaleDateString()}  |  ${result.timestamp}`, pageWidth - margin, 30, { align: "right" });
 
-    // Report Info
-    doc.text(`Report ID: ${Math.random().toString(36).substr(2, 9).toUpperCase()}`, 20, 55);
-    doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 62);
-    doc.text(`Time: ${result.timestamp}`, 20, 69);
+    // ── Patient Information Box ──
+    let y = 48;
+    doc.setFillColor(245, 247, 250);
+    doc.roundedRect(margin, y - 5, contentWidth, 32, 2, 2, "F");
+    doc.setDrawColor(200, 210, 225);
+    doc.roundedRect(margin, y - 5, contentWidth, 32, 2, 2, "S");
 
-    // DICOM metadata if available
-    let yPos = 69;
+    doc.setTextColor(80, 80, 80);
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.text("PATIENT INFORMATION", margin + 5, y + 1);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(30, 30, 30);
+    doc.text(`${result.patientName || "Unknown"}`, margin + 5, y + 10);
+
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    const ageGender = [
+      result.patientAge ? `Age: ${result.patientAge}` : null,
+      result.patientGender ? `Gender: ${result.patientGender}` : null,
+    ].filter(Boolean).join("   |   ");
+    doc.text(ageGender || "Age: N/A  |  Gender: N/A", margin + 5, y + 18);
+
+    // DICOM metadata inline if available
     if (result.dicom_metadata) {
-      yPos += 10;
-      doc.setFontSize(14);
-      doc.text("DICOM Information", 20, yPos);
-      doc.setFontSize(11);
-      yPos += 8;
-      if (result.dicom_metadata.modality) {
-        doc.text(`Modality: ${result.dicom_metadata.modality}`, 20, yPos);
-        yPos += 7;
-      }
-      if (result.dicom_metadata.institution) {
-        doc.text(`Institution: ${result.dicom_metadata.institution}`, 20, yPos);
-        yPos += 7;
-      }
-      if (result.dicom_metadata.study_date) {
-        doc.text(`Study Date: ${result.dicom_metadata.study_date}`, 20, yPos);
-        yPos += 7;
+      const dicomInfo = [
+        result.dicom_metadata.modality ? `Modality: ${result.dicom_metadata.modality}` : null,
+        result.dicom_metadata.institution ? `Institution: ${result.dicom_metadata.institution}` : null,
+        result.dicom_metadata.study_date ? `Study: ${result.dicom_metadata.study_date}` : null,
+      ].filter(Boolean).join("   |   ");
+      if (dicomInfo) {
+        doc.setFontSize(8);
+        doc.setTextColor(41, 128, 185);
+        doc.text(`📋 DICOM: ${dicomInfo}`, margin + 5, y + 24);
       }
     }
 
-    // Results
-    yPos += 8;
+    // ── Risk Assessment Box ──
+    y = 88;
+    const riskLabel = `${(result.risk || "unknown").toUpperCase()} RISK`;
+    let riskColorR = 46, riskColorG = 125, riskColorB = 50; // green
+    if (result.risk === "high") { riskColorR = 192; riskColorG = 57; riskColorB = 43; }
+    else if (result.risk === "moderate") { riskColorR = 230; riskColorG = 126; riskColorB = 34; }
+
+    doc.setFillColor(riskColorR, riskColorG, riskColorB);
+    doc.roundedRect(margin, y, contentWidth, 22, 2, 2, "F");
+
+    doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
-    doc.text("Analysis Results", 20, yPos);
-    yPos += 10;
+    doc.setFont("helvetica", "bold");
+    doc.text(riskLabel, margin + 8, y + 10);
 
-    doc.setFontSize(12);
-    doc.text(`Risk Assessment: ${result.risk?.toUpperCase()} RISK`, 20, yPos);
-    yPos += 7;
-    doc.text(`Confidence Score: ${result.confidence}%`, 20, yPos);
-    yPos += 10;
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Confidence: ${result.confidence}%`, margin + 8, y + 17);
 
-    // Clinical Notes
+    // Confidence bar background
+    const barX = pageWidth - margin - 82;
+    const barY = y + 7;
+    const barWidth = 74;
+    const barHeight = 8;
+    doc.setFillColor(255, 255, 255, 80);
+    doc.roundedRect(barX, barY, barWidth, barHeight, 2, 2, "F");
+    // Confidence bar fill
+    const fillWidth = (result.confidence / 100) * barWidth;
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(barX, barY, fillWidth, barHeight, 2, 2, "F");
+
+    // ── Clinical Findings Section ──
+    y = 118;
+    doc.setTextColor(30, 30, 30);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Clinical Findings", margin, y);
+
+    // Separator line
+    doc.setDrawColor(200, 210, 225);
+    doc.line(margin, y + 3, pageWidth - margin, y + 3);
+
+    y += 10;
     if (result.notes) {
-      doc.text("Clinical Findings:", 20, yPos);
-      yPos += 7;
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      const splitNotes = doc.splitTextToSize(result.notes, 170);
-      doc.text(splitNotes, 20, yPos);
-      yPos += splitNotes.length * 5 + 10;
-      doc.setFontSize(12);
+      doc.setTextColor(50, 50, 50);
+      const splitNotes = doc.splitTextToSize(result.notes, contentWidth - 10);
+      doc.text(splitNotes, margin + 2, y);
+      y += splitNotes.length * 5 + 8;
+    } else {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(10);
+      doc.setTextColor(150, 150, 150);
+      doc.text("No clinical findings recorded.", margin + 2, y);
+      y += 12;
     }
 
-    // Heatmap Image
+    // ── Heatmap Section ──
     if (result.heatmap) {
-      doc.text("AI Explanation (Heatmap Analysis):", 20, yPos);
+      doc.setTextColor(30, 30, 30);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("AI Heatmap Analysis", margin, y);
+      doc.setDrawColor(200, 210, 225);
+      doc.line(margin, y + 3, pageWidth - margin, y + 3);
+      y += 7;
+
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(120, 120, 120);
+      doc.text("Red/warm areas indicate regions of high feature activation (suspicious areas identified by AI).", margin, y);
+      y += 5;
+
       try {
-        doc.addImage(`data:image/png;base64,${result.heatmap}`, "PNG", 20, yPos + 5, 100, 100);
-        yPos += 110;
+        const imgWidth = 100;
+        const imgHeight = 75;
+        const imgX = (pageWidth - imgWidth) / 2;
+
+        doc.setDrawColor(200, 210, 225);
+        doc.roundedRect(imgX - 2, y - 2, imgWidth + 4, imgHeight + 4, 2, 2, "S");
+        doc.addImage(`data:image/png;base64,${result.heatmap}`, "PNG", imgX, y, imgWidth, imgHeight);
+        y += imgHeight + 6;
       } catch (e) {
-        console.error("Error adding image to PDF", e);
+        console.error("Error adding heatmap to PDF", e);
       }
     }
 
-    // Try to add doctor's digital signature
+    // ════════════════════════════════════════
+    //  SIGNATURE — Right after content
+    // ════════════════════════════════════════
     try {
       const storedUser = localStorage.getItem("user");
       if (storedUser) {
@@ -105,18 +194,43 @@ const ResultsCard = ({ result }: ResultsCardProps) => {
           const sigResponse = await fetch(`http://localhost:5000/api/auth/signature/${user.email}`);
           const sigData = await sigResponse.json();
           if (sigData.success && sigData.signature) {
-            const sigY = 240;
-            doc.setDrawColor(150, 150, 150);
-            doc.line(20, sigY, 100, sigY);
-            try {
-              doc.addImage(sigData.signature, "PNG", 30, sigY - 22, 50, 20);
-            } catch (e) {
-              console.error("Error adding signature to PDF", e);
+            // Only add new page if absolutely no room (need ~40px for signature block)
+            if (y > 250) {
+              doc.addPage();
+              y = 20;
             }
+
+            const sigY = y + 4;
+
+            // Signature label
+            doc.setFontSize(8);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(80, 80, 80);
+            doc.text("AUTHORIZED SIGNATURE", margin, sigY);
+
+            // Signature image
+            try {
+              doc.addImage(sigData.signature, "PNG", margin, sigY + 2, 55, 18);
+            } catch (e) {
+              console.error("Signature image error", e);
+            }
+
+            // Signature line
+            doc.setDrawColor(60, 60, 60);
+            doc.setLineWidth(0.5);
+            doc.line(margin, sigY + 21, margin + 80, sigY + 21);
+            doc.setLineWidth(0.2);
+
+            // Name and date
             doc.setFontSize(10);
-            doc.setTextColor(60, 60, 60);
-            doc.text(`Digitally Signed by Dr. ${sigData.username || user.name}`, 20, sigY + 6);
-            doc.text(`Date: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, 20, sigY + 12);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(30, 30, 30);
+            doc.text(`Dr. ${sigData.username || user.name}`, margin, sigY + 27);
+
+            doc.setFontSize(8);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(100, 100, 100);
+            doc.text(`Signed on: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}`, margin, sigY + 32);
           }
         }
       }
@@ -124,13 +238,17 @@ const ResultsCard = ({ result }: ResultsCardProps) => {
       console.error("Error fetching signature for PDF", e);
     }
 
-    // Disclaimer
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 100);
-    doc.text("Disclaimer: This report is generated by an AI Screening System.", 20, 280);
-    doc.text("It is not a final medical diagnosis. Please consult a specialist.", 20, 285);
+    // ── Footer — Disclaimer ──
+    const footerY = 282;
+    doc.setDrawColor(200, 210, 225);
+    doc.line(margin, footerY - 5, pageWidth - margin, footerY - 5);
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(140, 140, 140);
+    doc.text("DISCLAIMER: This report is generated by an AI-powered screening system and is intended for clinical decision support only.", margin, footerY);
+    doc.text("It does not constitute a medical diagnosis. Please consult a qualified healthcare professional for final assessment.", margin, footerY + 4);
 
-    doc.save("tb-screening-report.pdf");
+    doc.save(`TB_Report_${result.patientName || "Patient"}_${reportId}.pdf`);
   };
 
   if (!result) {
@@ -180,6 +298,20 @@ const ResultsCard = ({ result }: ResultsCardProps) => {
         Analysis Results
       </h3>
 
+      {/* Patient Info */}
+      {result.patientName && (
+        <div className="mb-4 p-3 bg-muted/30 rounded-lg border border-border/50 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+            <FileText className="w-4 h-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-foreground">{result.patientName}</p>
+            <p className="text-xs text-muted-foreground">
+              {result.patientAge ? `${result.patientAge} yrs` : ''}{result.patientGender ? ` • ${result.patientGender}` : ''}
+            </p>
+          </div>
+        </div>
+      )}
       <div className={`rounded-xl p-6 border ${statusBg}`}>
         <div className="flex items-center gap-3 mb-4">
           {statusIcon}
