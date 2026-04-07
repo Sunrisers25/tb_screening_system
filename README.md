@@ -30,7 +30,9 @@ Powered by a **DenseNet121** deep learning model, the system analyzes uploaded X
 
 The system follows a modern decoupled architecture:
 
-The system follows a modern decoupled architecture.
+The system follows a modern decoupled architecture:
+
+![System Architecture](architecture_diagram.png)
 
 
 ### 🔄 System Workflow & Architecture Breakdown
