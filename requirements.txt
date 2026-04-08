@@ -9,5 +9,5 @@ matplotlib
 supabase
 flask
 flask-cors
-fpdf
+fpdf2
 pydicom

@@ -23,6 +23,9 @@ interface ScreeningRecord {
   filename: string;
   original_path?: string;
   heatmap_path?: string;
+  doctor_review_status?: "pending" | "approved" | "overridden";
+  doctor_notes?: string;
+  final_risk?: "high" | "low" | "moderate" | "uncertain";
 }
 
 interface HistoryTableProps {
@@ -33,6 +36,14 @@ const HistoryTable = ({ limit }: HistoryTableProps) => {
   const [data, setData] = useState<ScreeningRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedReport, setSelectedReport] = useState<ScreeningRecord | null>(null);
+  const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try { setUser(JSON.parse(storedUser)); } catch (e) {}
+    }
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -51,7 +62,10 @@ const HistoryTable = ({ limit }: HistoryTableProps) => {
           status: "Completed",
           filename: log.filename,
           original_path: log.original_path ? `http://localhost:5000${log.original_path}` : undefined,
-          heatmap_path: log.heatmap_path ? `http://localhost:5000${log.heatmap_path}` : undefined
+          heatmap_path: log.heatmap_path ? `http://localhost:5000${log.heatmap_path}` : undefined,
+          doctor_review_status: log.doctor_review_status || 'pending',
+          doctor_notes: log.doctor_notes || '',
+          final_risk: log.final_risk || log.risk
         }));
         setData(mappedData);
       }
@@ -71,7 +85,11 @@ const HistoryTable = ({ limit }: HistoryTableProps) => {
   };
 
   const handleExportPDF = () => {
-    window.open("http://localhost:5000/api/export_pdf_summary", "_blank");
+    window.open("http://localhost:5000/api/export_pdf_summary?user_email=" + encodeURIComponent(user?.email || 'unknown'), "_blank");
+  };
+
+  const handleExportSinglePDF = (id: string, lang: string) => {
+    window.open(`http://localhost:5000/api/history/${id}/pdf?lang=${lang}&user_email=${encodeURIComponent(user?.email || 'unknown')}`, '_blank');
   };
 
   const handleDelete = async (id: string) => {
@@ -90,6 +108,56 @@ const HistoryTable = ({ limit }: HistoryTableProps) => {
       console.error("Delete error:", error);
     }
   };
+
+  const [reviewNotes, setReviewNotes] = useState("");
+  const [reviewRisk, setReviewRisk] = useState<"high" | "low" | "moderate" | "uncertain">("low");
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+
+  const handleReviewSubmit = async (status: "approved" | "overridden") => {
+    if (!selectedReport) return;
+    setIsSubmittingReview(true);
+    
+    // If approved, use the original AI risk. If overridden, use the selected manual risk.
+    const finalRisk = status === "approved" ? selectedReport.risk : reviewRisk;
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/history/${selectedReport.id}/review`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          review_status: status,
+          doctor_notes: reviewNotes,
+          final_risk: finalRisk
+        })
+      });
+
+      if (response.ok) {
+        // Update local state
+        const updatedRecord = {
+          ...selectedReport,
+          doctor_review_status: status,
+          doctor_notes: reviewNotes,
+          final_risk: finalRisk
+        };
+        setSelectedReport(updatedRecord);
+        setData(data.map(item => item.id === selectedReport.id ? updatedRecord : item));
+      } else {
+        alert("Failed to submit review");
+      }
+    } catch (error) {
+      console.error("Review submit error:", error);
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
+
+  // Reset review form when modal opens
+  useEffect(() => {
+    if (selectedReport) {
+      setReviewNotes(selectedReport.doctor_notes || "");
+      setReviewRisk(selectedReport.final_risk || selectedReport.risk || "low");
+    }
+  }, [selectedReport]);
 
   const displayedData = limit ? data.slice(0, limit) : data;
 
@@ -183,19 +251,46 @@ const HistoryTable = ({ limit }: HistoryTableProps) => {
                       </td>
                       <td className="py-3 px-4 text-sm text-muted-foreground">{record.date}</td>
                       <td className="py-3 px-4">
-                        <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${color}`}>
-                          <Icon className="w-3.5 h-3.5" />
-                          {label}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-flex items-center gap-1.5 text-sm font-medium ${color}`}>
+                            <Icon className="w-3.5 h-3.5" />
+                            {label}
+                          </span>
+                          {record.doctor_review_status && record.doctor_review_status !== 'pending' && (
+                            <span className="text-[10px] uppercase font-semibold text-primary">
+                              {record.doctor_review_status}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4">
                         <span className="text-sm text-muted-foreground">{record.confidence}%</span>
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <Button variant="ghost" size="icon" onClick={() => window.open(`http://localhost:5000/api/history/${record.id}/pdf`, '_blank')} title="Download Report">
-                            <FileText className="w-4 h-4 text-primary" />
-                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" title="Download Report">
+                                <FileText className="w-4 h-4 text-primary" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="bg-background border-border">
+                              <DropdownMenuLabel>Select Language</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => handleExportSinglePDF(record.id, 'en')} className="cursor-pointer text-foreground hover:bg-muted">
+                                English
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleExportSinglePDF(record.id, 'hi')} className="cursor-pointer text-foreground hover:bg-muted font-medium">
+                                Hindi (हिंदी)
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleExportSinglePDF(record.id, 'te')} className="cursor-pointer text-foreground hover:bg-muted font-medium">
+                                Telugu (తెలుగు)
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleExportSinglePDF(record.id, 'kn')} className="cursor-pointer text-foreground hover:bg-muted font-medium">
+                                Kannada (ಕನ್ನಡ)
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                           <Button variant="ghost" size="icon" onClick={() => setSelectedReport(record)} title="View Report">
                             <Eye className="w-4 h-4 text-primary" />
                           </Button>
@@ -280,9 +375,111 @@ const HistoryTable = ({ limit }: HistoryTableProps) => {
                 </div>
               </div>
             </div>
+
+            {/* DOCTOR REVIEW SECTION */}
+            <div className="mt-6 border-t border-border pt-6">
+              <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
+                <FileText className="w-5 h-5 text-primary" /> 
+                Doctor Review
+              </h3>
+              
+              {selectedReport.doctor_review_status === "pending" || !selectedReport.doctor_review_status ? (
+                user?.role === 'doctor' || user?.role === 'admin' ? (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                      <p className="text-sm text-amber-600 font-medium">This screening requires clinical verification.</p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Clinical Notes (Optional)</label>
+                      <textarea 
+                        className="w-full min-h-[80px] rounded-xl border border-input bg-background/50 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                        placeholder="Add your observations here..."
+                        value={reviewNotes}
+                        onChange={(e) => setReviewNotes(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                         <label className="text-sm font-medium text-muted-foreground">Approve AI Findings</label>
+                         <Button 
+                           variant="default" 
+                           className="w-full bg-success hover:bg-success/90"
+                           disabled={isSubmittingReview}
+                           onClick={() => handleReviewSubmit("approved")}
+                         >
+                           Approve AI Risk ({selectedReport.risk.toUpperCase()})
+                         </Button>
+                      </div>
+                      <div className="space-y-2">
+                         <label className="text-sm font-medium text-muted-foreground">Override AI Findings</label>
+                         <div className="flex gap-2">
+                           <select 
+                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                             value={reviewRisk}
+                             onChange={(e) => setReviewRisk(e.target.value as any)}
+                           >
+                             <option value="low">Low Risk</option>
+                             <option value="moderate">Moderate Risk</option>
+                             <option value="high">High Risk</option>
+                           </select>
+                           <Button 
+                             variant="outline"
+                             disabled={isSubmittingReview}
+                             onClick={() => handleReviewSubmit("overridden")}
+                             className="border-destructive text-destructive hover:bg-destructive hover:text-white"
+                           >
+                             Override
+                           </Button>
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-muted/40 rounded-xl border border-border flex items-center gap-3">
+                    <AlertTriangle className="w-5 h-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Pending Review</p>
+                      <p className="text-xs text-muted-foreground">Only authorized physicians can verify or override these AI results.</p>
+                    </div>
+                  </div>
+                )
+              ) : (
+                <div className="p-4 bg-muted/40 rounded-xl border border-border">
+                  <div className="flex items-center gap-2 mb-3">
+                    <CheckCircle2 className="w-5 h-5 text-success" />
+                    <span className="font-semibold capitalize text-foreground">
+                      Status: {selectedReport.doctor_review_status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                     <div>
+                       <span className="text-muted-foreground block text-xs uppercase">Final Verified Risk</span>
+                       <span className={`font-semibold ${
+                         selectedReport.final_risk === 'high' ? 'text-destructive' : 
+                         selectedReport.final_risk === 'moderate' ? 'text-warning' : 'text-success'
+                       }`}>
+                         {selectedReport.final_risk?.toUpperCase()}
+                       </span>
+                     </div>
+                  </div>
+                  {selectedReport.doctor_notes && (
+                    <div>
+                       <span className="text-muted-foreground block text-xs uppercase mb-1">Doctor's Notes</span>
+                       <p className="text-foreground italic bg-background p-3 rounded-md border border-border">
+                         "{selectedReport.doctor_notes}"
+                       </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
           </div>
         </div>
       )}
+
     </>
   );
 };

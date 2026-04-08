@@ -190,11 +190,11 @@ def generate_clinical_findings(probability, heatmap_raw):
     else:
         intensity_str = "Faint shadowing"
 
-    if probability > 0.6:
+    if probability > 0.65:
         note = (f"{intensity_str} detected in {extent_str} pattern (approx {int(coverage_ratio*100)}% lung area). "
                 f"Findings are consistent with Active Tuberculosis ({confidence}% confidence). "
                 "Immediate sputum smear microscopy and clinical correlation recommended.")
-    elif probability < 0.3:
+    elif probability < 0.35:
         if coverage_ratio > 0.05:
             note = (f"AI detects {extent_str} {intensity_str.lower()}, but overall probability of Tuberculosis is low ({confidence}%). "
                     "Likely non-specific or scarring. Standard routine follow-up recommended.")
@@ -203,9 +203,9 @@ def generate_clinical_findings(probability, heatmap_raw):
                     "Lungs appear clear. Standard routine check-up recommended.")
     else:
         note = (f"{intensity_str} detected with {extent_str} distribution. "
-                f"AI assessment is indeterminate ({confidence}% probability). "
-                "Suggests potential early-stage infection or other pulmonary condition. "
-                "Radiologist review and follow-up X-ray recommended.")
+                f"AI assessment is inconclusive ({confidence}% probability). "
+                "This case is marked for priority Radiologist review. "
+                "Suggests potential early-stage infection or atypical pulmonary condition.")
 
     return note
 
@@ -286,12 +286,12 @@ def predict():
         notes = generate_clinical_findings(probability, heatmap_raw)
 
         # Determine risk
-        if probability > 0.6:
+        if probability > 0.65:
             risk = "high"
-        elif probability < 0.30:
+        elif probability < 0.35:
             risk = "low"
         else:
-            risk = "moderate"
+            risk = "uncertain"
 
         # Save images locally
         timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -329,6 +329,9 @@ def predict():
             )
         except Exception as e:
             print(f"Logging error: {e}")
+            
+        user_email = request.form.get('doctor_email', 'unknown')
+        db.log_audit(user_email, "Predict X-ray", f"Uploaded and analyzed X-ray for patient '{patient_name}'. Risk: {risk}")
 
         response_data = {
             'risk': risk,
@@ -359,18 +362,19 @@ def login():
     email = data.get('email')
     password = data.get('password')
 
-    success, username = db.authenticate_user(email, password)
+    success, result = db.authenticate_user(email, password)
 
     if success:
         return jsonify({
             'success': True,
             'user': {
-                'name': username,
-                'email': email
+                'name': result['username'],
+                'email': result['email'],
+                'role': result['role']
             }
         })
     else:
-        return jsonify({'success': False, 'message': 'Invalid credentials'}), 401
+        return jsonify({'success': False, 'message': result}), 401
 
 
 @app.route('/api/auth/signup', methods=['POST'])
@@ -379,16 +383,50 @@ def signup():
     email = data.get('email')
     password = data.get('password')
     name = data.get('name')
+    role = data.get('role', 'radiographer')
 
     if not email or not password or not name:
         return jsonify({'success': False, 'message': 'Missing fields'}), 400
 
-    success, msg = db.create_user(email, password, name)
+    success, msg = db.create_user(email, password, name, role)
 
     if success:
+        db.log_audit(email, "Sign Up", f"New user signed up as {role}. Pending auto-approval.")
         return jsonify({'success': True, 'message': msg})
     else:
         return jsonify({'success': False, 'message': msg}), 400
+
+# ══════════════════════════════════════════
+#  ADMIN & SECURITY ENDPOINTS
+# ══════════════════════════════════════════
+
+@app.route('/api/admin/users/pending', methods=['GET'])
+def get_pending_users():
+    return jsonify(db.get_pending_users())
+
+@app.route('/api/admin/users/approve', methods=['PUT'])
+def approve_user():
+    data = request.json
+    email = data.get('email')
+    admin_email = data.get('admin_email', 'system')
+    if db.approve_user(email):
+        db.log_audit(admin_email, "Approved User", f"Approved user access for {email}")
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Failed to approve user'}), 500
+
+@app.route('/api/admin/users/reject', methods=['PUT'])
+def reject_user():
+    data = request.json
+    email = data.get('email')
+    admin_email = data.get('admin_email', 'system')
+    if db.reject_user(email):
+        db.log_audit(admin_email, "Rejected User", f"Denied registration for {email}")
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Failed to reject user'}), 500
+
+@app.route('/api/audit_logs', methods=['GET'])
+def fetch_audit_logs():
+    return jsonify(db.get_audit_logs())
 
 
 # ══════════════════════════════════════════
@@ -555,6 +593,39 @@ def export_pdf_summary():
 #  HISTORY ENDPOINTS
 # ══════════════════════════════════════════
 
+@app.route('/api/stats', methods=['GET'])
+def get_dashboard_stats():
+    stats = db.get_stats()
+    return jsonify(stats)
+
+@app.route('/api/stats/chart', methods=['GET'])
+def get_chart_stats():
+    try:
+        conn = db.get_db_connection()
+        # Group by date for the last 7 days
+        seven_days_ago = (datetime.datetime.now() - datetime.timedelta(days=7)).isoformat()
+        
+        query = '''
+            SELECT date(timestamp) as date,
+                   COUNT(*) as total,
+                   SUM(CASE WHEN risk = 'high' OR final_risk = 'high' THEN 1 ELSE 0 END) as high_risk,
+                   SUM(CASE WHEN risk = 'moderate' OR final_risk = 'moderate' THEN 1 ELSE 0 END) as moderate_risk,
+                   SUM(CASE WHEN risk = 'low' OR final_risk = 'low' THEN 1 ELSE 0 END) as low_risk
+            FROM screenings 
+            WHERE timestamp > ?
+            GROUP BY date(timestamp)
+            ORDER BY date(timestamp) ASC
+        '''
+        rows = conn.execute(query, (seven_days_ago,)).fetchall()
+        conn.close()
+        
+        result = [dict(row) for row in rows]
+        return jsonify(result)
+    except Exception as e:
+        print(f"Chart Stats Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/history', methods=['GET'])
 def history():
     logs = db.get_logs()
@@ -565,9 +636,32 @@ def history():
 def delete_history_item(log_id):
     success = db.delete_log(log_id)
     if success:
+        user_email = request.args.get('user_email', 'unknown')
+        db.log_audit(user_email, "Deleted Report", f"Deleted screening log ID: {log_id}")
         return jsonify({'success': True})
     else:
         return jsonify({'success': False, 'error': 'Failed to delete'}), 500
+
+
+@app.route('/api/history/<int:log_id>/review', methods=['PUT'])
+def review_history_item(log_id):
+    data = request.json
+    review_status = data.get('review_status')
+    doctor_notes = data.get('doctor_notes')
+    final_risk = data.get('final_risk')
+    
+    doctor_email = data.get('doctor_email', 'unknown')
+    
+    if not review_status or not final_risk:
+        return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+        
+    success, msg = db.review_screening(log_id, review_status, doctor_notes, final_risk)
+    
+    if success:
+        db.log_audit(doctor_email, "Reviewed Report", f"Dr. {doctor_email} reviewed Log ID: {log_id}. Set risk to {final_risk}.")
+        return jsonify({'success': True, 'message': msg})
+    else:
+        return jsonify({'success': False, 'error': msg}), 500
 
 
 @app.route('/api/history/<int:log_id>/pdf', methods=['GET'])
@@ -580,29 +674,90 @@ def generate_pdf(log_id):
         if not log:
             return jsonify({'error': 'Report not found'}), 404
 
+        lang = request.args.get('lang', 'en')
+
+        # Translate Dictionary
+        translations = {
+            'en': {
+                'patient_name': 'Patient Name', 'age': 'Age', 'gender': 'Gender', 'date': 'Date',
+                'result': 'Result', 'confidence': 'Confidence', 'clinical_notes': 'Clinical Notes:',
+                'original_xray': 'Original X-Ray', 'ai_analysis': 'AI Analysis',
+                'digitally_signed': 'Digitally Signed by Dr.',
+                'disclaimer': 'This report is generated by an AI Screening System. It is not a final medical diagnosis.'
+            },
+            'hi': {
+                'patient_name': 'मरीज का नाम', 'age': 'उम्र', 'gender': 'लिंग', 'date': 'तारीख',
+                'result': 'परिणाम', 'confidence': 'आत्मविश्वास', 'clinical_notes': 'क्लिनिकल नोट्स:',
+                'original_xray': 'मूल एक्स-रे', 'ai_analysis': 'एआई विश्लेषण',
+                'digitally_signed': 'डॉक्टर द्वारा डिजिटल रूप से हस्ताक्षरित',
+                'disclaimer': 'यह रिपोर्ट एआई स्क्रीनिंग सिस्टम द्वारा उत्पन्न की गई है। यह अंतिम चिकित्सा निदान नहीं है।'
+            },
+            'te': {
+                'patient_name': 'రోగి పేరు', 'age': 'వయస్సు', 'gender': 'లింగం', 'date': 'తేదీ',
+                'result': 'ఫలితం', 'confidence': 'విశ్వాసం', 'clinical_notes': 'క్లినికల్ నోట్స్:',
+                'original_xray': 'అసలు ఎక్స్‌రే', 'ai_analysis': 'AI విశ్లేషణ',
+                'digitally_signed': 'డిజిటల్‌గా సంతకం చేసిన వారు డా.',
+                'disclaimer': 'ఈ నివేదిక AI స్క్లీనింగ్ సిస్టమ్ ద్వారా రూపొందించబడింది. ఇది తుది వైద్య నిర్ధారణ కాదు.'
+            },
+            'kn': {
+                'patient_name': 'ರೋಗಿಯ ಹೆಸರು', 'age': 'ವಯಸ್ಸು', 'gender': 'ಲಿಂಗ', 'date': 'ದಿನಾಂಕ',
+                'result': 'ಫಲಿತಾಂಶ', 'confidence': 'ವಿಶ್ವಾಸಾರ್ಹತೆ', 'clinical_notes': 'ಕ್ಲಿನಿಕಲ್ ಟಿಪ್ಪಣಿಗಳು:',
+                'original_xray': 'ಮೂಲ ಎಕ್ಸ್-ರೇ', 'ai_analysis': 'AI ವಿಶ್ಲೇಷಣೆ',
+                'digitally_signed': 'ಡಿಜಿಟಲ್ ಸಹಿ ಮಾಡಿದವರು ಡಾ.',
+                'disclaimer': 'ಈ ವರದಿಯನ್ನು AI ಸ್ಕ್ರೀನಿಂಗ್ ಸಿಸ್ಟಮ್‌ನಿಂದ ರಚಿಸಲಾಗಿದೆ. ಇದು ಅಂತಿಮ ವೈದ್ಯಕೀಯ ರೋಗನಿರ್ಣಯವಲ್ಲ.'
+            }
+        }
+        
+        t = translations.get(lang, translations['en'])
+
         pdf = PDFReport()
         pdf.add_page()
-        pdf.set_font("Arial", size=12)
+        
+        # Add fonts based on language
+        font_family = "Arial"
+        if lang == 'hi':
+            pdf.add_font("NotoSansDevanagari", style="", fname="NotoSansDevanagari-Regular.ttf")
+            font_family = "NotoSansDevanagari"
+        elif lang == 'te':
+            pdf.add_font("NotoSansTelugu", style="", fname="NotoSansTelugu-Regular.ttf")
+            font_family = "NotoSansTelugu"
+        elif lang == 'kn':
+            pdf.add_font("NotoSansKannada", style="", fname="NotoSansKannada-Regular.ttf")
+            font_family = "NotoSansKannada"
+            
+        pdf.set_font(font_family, size=12)
 
         # Patient Details
-        pdf.cell(0, 10, f"Patient Name: {log['patient_name'] or 'Unknown'}", ln=True)
-        pdf.cell(0, 10, f"Age: {log['age'] or 'N/A'}   Gender: {log['gender'] or 'N/A'}", ln=True)
-        pdf.cell(0, 10, f"Date: {log['timestamp']}", ln=True)
+        pdf.cell(0, 10, f"{t['patient_name']}: {log['patient_name'] or 'Unknown'}", ln=True)
+        pdf.cell(0, 10, f"{t['age']}: {log['age'] or 'N/A'}   {t['gender']}: {log['gender'] or 'N/A'}", ln=True)
+        pdf.cell(0, 10, f"{t['date']}: {log['timestamp']}", ln=True)
+
         pdf.ln(5)
 
         # Result
-        pdf.set_font("Arial", 'B', 12)
-        result_text = log['result'].upper() if 'result' in log.keys() else log['risk'].upper()
-        pdf.cell(0, 10, f"Result: {result_text}", ln=True)
-        pdf.cell(0, 10, f"Confidence: {round(log['probability'] * 100, 2)}%", ln=True)
+        # FPDF2 supports 'B' style out of the box for core fonts, but for loaded TTF we'd need a bold TFT.
+        # Since we only downloaded regular, we'll stick to regular for Indian languages to avoid errors.
+        if font_family == "Arial":
+            pdf.set_font("Arial", 'B', 12)
+        
+        result_text = log.get('final_risk') or log.get('result') or log.get('risk') or ''
+        result_text = result_text.upper()
+        
+        pdf.cell(0, 10, f"{t['result']}: {result_text}", ln=True)
+        pdf.cell(0, 10, f"{t['confidence']}: {round(log['probability'] * 100, 2)}%", ln=True)
+
         pdf.ln(5)
 
         # Notes
-        if log['notes']:
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 10, "Clinical Notes:", ln=True)
-            pdf.set_font("Arial", '', 12)
-            pdf.multi_cell(0, 10, log['notes'])
+        doc_review_status = log.get('doctor_review_status', 'pending')
+        notes_to_show = log.get('doctor_notes') if doc_review_status != 'pending' and log.get('doctor_notes') else log['notes']
+        
+        if notes_to_show:
+            if font_family == "Arial":
+                pdf.set_font("Arial", 'B', 12)
+            pdf.cell(0, 10, t['clinical_notes'], ln=True)
+            pdf.set_font(font_family, '', 12)
+            pdf.multi_cell(0, 10, notes_to_show)
             pdf.ln(5)
 
         # Images
@@ -612,13 +767,13 @@ def generate_pdf(log_id):
             path = log['original_path'].lstrip('/')
             if os.path.exists(path):
                 pdf.image(path, x=10, y=y_start, w=90)
-                pdf.text(10, y_start + 95, "Original X-Ray")
+                pdf.text(10, y_start + 95, t['original_xray'])
 
         if log['heatmap_path']:
             path = log['heatmap_path'].lstrip('/')
             if os.path.exists(path):
                 pdf.image(path, x=110, y=y_start, w=90)
-                pdf.text(110, y_start + 95, "AI Analysis")
+                pdf.text(110, y_start + 95, t['ai_analysis'])
 
         # ── Digital Signature ──
         # Try to find the doctor's signature from the request header or fallback
@@ -635,15 +790,23 @@ def generate_pdf(log_id):
                     pdf.line(20, sig_y, 100, sig_y)
                     pdf.image(sig_img, x=30, y=sig_y - 20, w=50, h=18)
                     pdf.set_font("Arial", 'I', 10)
-                    pdf.text(20, sig_y + 5, f"Digitally Signed by Dr. {doc_name}")
-                    pdf.text(20, sig_y + 10, f"Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
+                    pdf.text(20, sig_y + 5, f"{t['digitally_signed']} {doc_name}")
+                    pdf.text(20, sig_y + 10, f"{t['date']} {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}")
                 except Exception as e:
                     print(f"Signature embedding error: {e}")
 
         # Disclaimer
-        pdf.set_font("Arial", 'I', 8)
+        if font_family == "Arial":
+            pdf.set_font("Arial", 'I', 8)
+        else:
+            pdf.set_font(font_family, '', 8)
+            
         pdf.set_text_color(120, 120, 120)
-        pdf.text(20, 280, "This report is generated by an AI Screening System. It is not a final medical diagnosis.")
+        pdf.text(20, 280, t['disclaimer'])
+        
+        # Log download
+        user_email = request.args.get('user_email', 'unknown')
+        db.log_audit(user_email, "Exported PDF", f"Generated PDF report for log ID: {log_id} in {lang}")
 
         # Output
         pdf_bytes = pdf.output(dest='S').encode('latin-1')

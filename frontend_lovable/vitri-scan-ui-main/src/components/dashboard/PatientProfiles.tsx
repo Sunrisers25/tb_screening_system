@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Users, Search, Plus, X, Phone, Mail, FileText,
-  Activity, ChevronRight, AlertTriangle, CheckCircle2, Calendar, User, Stethoscope
+  Activity, ChevronRight, AlertTriangle, CheckCircle2, Calendar, User, Stethoscope, Columns
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,8 @@ interface Screening {
   probability: number;
   timestamp: string;
   notes?: string;
+  original_path?: string;
+  heatmap_path?: string;
 }
 
 const SYMPTOM_OPTIONS = [
@@ -51,6 +53,7 @@ const PatientProfiles = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<(Patient & { screenings?: Screening[] }) | null>(null);
+  const [showCompareModal, setShowCompareModal] = useState(false);
 
   // Form state
   const [formName, setFormName] = useState("");
@@ -245,10 +248,18 @@ const PatientProfiles = () => {
 
         {/* Screening Timeline */}
         <div className="glass-strong rounded-2xl p-6">
-          <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-primary" />
-            Screening History ({selectedPatient.screenings?.length || 0})
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <Activity className="w-5 h-5 text-primary" />
+              Screening History ({selectedPatient.screenings?.length || 0})
+            </h3>
+            {selectedPatient.screenings && selectedPatient.screenings.length >= 2 && (
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowCompareModal(true)}>
+                <Columns className="w-4 h-4" />
+                Compare History
+              </Button>
+            )}
+          </div>
 
           {(!selectedPatient.screenings || selectedPatient.screenings.length === 0) ? (
             <p className="text-sm text-muted-foreground text-center py-6">No screenings found for this patient.</p>
@@ -282,6 +293,83 @@ const PatientProfiles = () => {
             </div>
           )}
         </div>
+
+        {/* ── Comparison Modal ── */}
+        {showCompareModal && selectedPatient.screenings && selectedPatient.screenings.length >= 2 && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
+            <div className="bg-background rounded-2xl w-[95vw] max-w-6xl max-h-[95vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in duration-200">
+              <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 flex items-center justify-between p-4 border-b border-border">
+                <div>
+                  <h2 className="text-xl font-bold flex items-center gap-2">
+                    <Columns className="w-5 h-5 text-primary" /> 
+                    Longitudinal Comparison
+                  </h2>
+                  <p className="text-sm text-muted-foreground">{selectedPatient.name}</p>
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => setShowCompareModal(false)}>
+                  <X className="w-6 h-6" />
+                </Button>
+              </div>
+              
+              <div className="p-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Select the two most recent for simplicity, or we could add selectors.
+                      Given 'screenings' is sorted by ID DESC, [0] is newest, [1] is older.
+                      We will show Oldest on Left, Newest on Right.
+                   */}
+                  {[selectedPatient.screenings[1], selectedPatient.screenings[0]].map((s, idx) => (
+                    <div key={s.id} className="space-y-4">
+                      <div className="p-4 bg-muted/30 rounded-xl border border-border flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                            {idx === 0 ? "Previous Screening" : "Latest Screening"}
+                          </p>
+                          <p className="font-medium mt-1">
+                            {new Date(s.timestamp).toLocaleDateString()} {new Date(s.timestamp).toLocaleTimeString()}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          {getRiskBadge(s.result || s.risk)}
+                          <p className="text-sm font-mono mt-1 text-muted-foreground">{Math.round(s.probability * 100)}% Conf.</p>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <p className="text-xs text-center text-muted-foreground font-medium">Original</p>
+                          <div className="aspect-square bg-black rounded-lg overflow-hidden border border-border">
+                            {s.original_path ? (
+                              <img src={`http://localhost:5000${s.original_path}`} className="w-full h-full object-contain" alt="Original" />
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No Image</div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-xs text-center text-primary font-medium">AI Heatmap</p>
+                          <div className="aspect-square bg-black rounded-lg overflow-hidden border border-border">
+                            {s.heatmap_path ? (
+                              <img src={`http://localhost:5000${s.heatmap_path}`} className="w-full h-full object-contain" alt="Heatmap" />
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No Heatmap</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {s.notes && (
+                        <div className="p-3 bg-muted/20 border border-border rounded-lg">
+                          <p className="text-xs text-muted-foreground uppercase font-semibold mb-1">Clinical Notes</p>
+                          <p className="text-sm text-foreground italic text-balance">"{s.notes}"</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

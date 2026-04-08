@@ -18,6 +18,7 @@ const Login = () => {
     const email = (form.elements.namedItem('email') as HTMLInputElement).value;
     const password = (form.elements.namedItem('password') as HTMLInputElement).value;
     const name = isLogin ? "" : (form.elements.namedItem('name') as HTMLInputElement).value;
+    const role = isLogin ? "" : (form.elements.namedItem('role') as HTMLSelectElement).value;
 
     const endpoint = isLogin ? "http://localhost:5000/api/auth/login" : "http://localhost:5000/api/auth/signup";
 
@@ -25,19 +26,19 @@ const Login = () => {
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name })
+        body: JSON.stringify({ email, password, name, role })
       });
 
       const data = await response.json();
 
       if (data.success) {
         if (isLogin) {
-          // Store user info if needed
+          // Store user info
           localStorage.setItem('user', JSON.stringify(data.user));
           navigate("/dashboard");
         } else {
           // If signup success, switch to login
-          alert("Account created! Please log in.");
+          alert("Account created! Please wait for an Admin to approve your account before logging in.");
           setIsLogin(true);
         }
       } else {
@@ -86,19 +87,37 @@ const Login = () => {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {!isLogin && (
-              <div className="space-y-2 animate-fade-in">
-                <Label htmlFor="name" className="text-sm font-medium text-foreground">
-                  Full Name
-                </Label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="name"
-                    placeholder="Dr. Jane Smith"
-                    className="pl-10 h-11 rounded-xl border-border bg-background/50"
-                  />
+              <>
+                <div className="space-y-2 animate-fade-in">
+                  <Label htmlFor="name" className="text-sm font-medium text-foreground">
+                    Full Name
+                  </Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      id="name"
+                      placeholder="Dr. Jane Smith"
+                      className="pl-10 h-11 rounded-xl border-border bg-background/50"
+                      required
+                    />
+                  </div>
                 </div>
-              </div>
+
+                <div className="space-y-2 animate-fade-in">
+                  <Label htmlFor="role" className="text-sm font-medium text-foreground">
+                    Requested Role
+                  </Label>
+                  <select 
+                    id="role" 
+                    name="role" 
+                    className="flex w-full pl-3 pr-8 h-11 rounded-xl border border-border bg-background/50 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    required
+                  >
+                    <option value="radiographer">Radiographer (Upload & View)</option>
+                    <option value="doctor">Doctor (Clinical Review)</option>
+                  </select>
+                </div>
+              </>
             )}
 
             <div className="space-y-2">

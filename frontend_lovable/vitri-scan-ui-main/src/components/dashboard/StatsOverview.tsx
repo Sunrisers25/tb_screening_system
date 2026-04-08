@@ -1,5 +1,6 @@
-import { FileSearch, AlertTriangle, CheckCircle2, TrendingUp, Users } from "lucide-react";
+import { FileSearch, AlertTriangle, CheckCircle2, TrendingUp, Users, Activity } from "lucide-react";
 import { useEffect, useState } from "react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 interface StatCardProps {
   icon: React.ElementType;
@@ -32,13 +33,34 @@ interface StatsData {
   patient_count: number;
 }
 
+interface ChartData {
+  date: string;
+  total: number;
+  high_risk: number;
+  moderate_risk: number;
+  low_risk: number;
+}
+
 const StatsOverview = () => {
   const [statsData, setStatsData] = useState<StatsData | null>(null);
+  const [chartData, setChartData] = useState<ChartData[]>([]);
 
   useEffect(() => {
     fetch("http://localhost:5000/api/stats")
       .then((res) => res.json())
       .then((data) => setStatsData(data))
+      .catch(console.error);
+      
+    fetch("http://localhost:5000/api/stats/chart")
+      .then((res) => res.json())
+      .then((data) => {
+        // format date string for display
+        const formatted = data.map((d: any) => ({
+          ...d,
+          formattedDate: new Date(d.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+        }));
+        setChartData(formatted);
+      })
       .catch(console.error);
   }, []);
 
@@ -84,11 +106,47 @@ const StatsOverview = () => {
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-      {stats.map((stat) => (
-        <StatCard key={stat.label} {...stat} />
-      ))}
-    </div>
+    <>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {stats.map((stat) => (
+          <StatCard key={stat.label} {...stat} />
+        ))}
+      </div>
+
+      <div className="glass-strong rounded-2xl p-6 mb-8 animate-slide-up">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <Activity className="w-5 h-5 text-primary" />
+            Testing Trends (Last 7 Days)
+          </h3>
+        </div>
+        
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={chartData}
+              margin={{ top: 5, right: 30, left: 10, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.5} />
+              <XAxis dataKey="formattedDate" stroke="hsl(var(--muted-foreground))" fontSize={12} tickMargin={10} />
+              <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} allowDecimals={false} />
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: 'hsl(var(--background))', 
+                  borderColor: 'hsl(var(--border))',
+                  borderRadius: '0.75rem',
+                  boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
+                }} 
+              />
+              <Legend wrapperStyle={{ paddingTop: '20px' }} />
+              <Line type="monotone" dataKey="high_risk" name="High Risk" stroke="#ef4444" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+              <Line type="monotone" dataKey="moderate_risk" name="Moderate Risk" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4 }} />
+              <Line type="monotone" dataKey="low_risk" name="Low Risk" stroke="#22c55e" strokeWidth={3} dot={{ r: 4 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </>
   );
 };
 

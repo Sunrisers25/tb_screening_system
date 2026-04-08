@@ -8,12 +8,14 @@ import torch.nn.functional as F
 
 class TBModel:
     def __init__(self):
-        # Load a DenseNet121 model
+        # Load DenseNet121 model
         try:
-            from torchvision.models import DenseNet121_Weights
+            from torchvision.models import DenseNet121_Weights, ResNet50_Weights
             self.model = models.densenet121(weights=DenseNet121_Weights.DEFAULT)
+            self.model2 = models.resnet50(weights=ResNet50_Weights.DEFAULT)
         except ImportError:
             self.model = models.densenet121(pretrained=True)
+            self.model2 = models.resnet50(pretrained=True)
 
         # Replace classifier as requested
         num_ftrs = self.model.classifier.in_features
@@ -31,20 +33,27 @@ class TBModel:
         # to react to high feature activation. 
         # The chain is: Features -> Linear(1024->256) -> ReLU -> Dropout -> Linear(256->1)
         
+        # --- Adapt ResNet50 (Ensemble Model) ---
+        num_ftrs2 = self.model2.fc.in_features
+        self.model2.fc = nn.Sequential(
+            nn.Linear(num_ftrs2, 256),
+            nn.ReLU(inplace=False),
+            nn.Dropout(0.4),
+            nn.Linear(256, 1)
+        )
         # Access the final linear layer (index 3 in Sequential)
         final_layer = self.model.classifier[3]
+        final_layer2 = self.model2.fc[3]
         
         with torch.no_grad():
-            # Set weights to be positive -> High features = High Output (TB)
+            # Apply same deterministic scaling as model1
             final_layer.weight.data.fill_(0.12)
-            
-            # Set Bias:
-            # We want clean images (low feature sum) to be negative logit (Low Probability).
-            # High feature sum will push logit positive (High Probability).
-            # Adjust bias to set the threshold.
             final_layer.bias.data.fill_(-10.0) 
+            final_layer2.weight.data.fill_(0.12)
+            final_layer2.bias.data.fill_(-10.0)
             
         self.model.eval()
+        self.model2.eval()
         
         # Define transforms
         self.preprocess_transform = transforms.Compose([
@@ -100,9 +109,29 @@ class TBModel:
             
         return True, ""
 
+    def generate_lung_mask(self, image):
+        """
+        Generates a heuristic mask to focus analysis on the lung fields.
+        Uses adaptive thresholding and morphological operations.
+        """
+        # Resize to model input size for consistency
+        img_np = np.array(image.resize((224, 224)).convert('L'))
+        
+        # Use simple thresholding to separate body from background
+        _, thresh = cv2.threshold(img_np, 50, 255, cv2.THRESH_BINARY)
+        
+        # Morphological closing to fill small holes
+        kernel = np.ones((15, 15), np.uint8)
+        mask = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+        
+        # Blur the mask to create soft edges for the heatmap
+        mask = cv2.GaussianBlur(mask, (21, 21), 0)
+        
+        return mask.astype(float) / 255.0
+
     def predict(self, image):
         """
-        Runs inference on the image.
+        Runs inference on the image using an ensemble of DenseNet and ResNet.
         Returns: (probability of TB, heatmap_overlay_image, heatmap_raw_numpy)
         If validation fails, returns (None, error_message_string, None)
         """
@@ -114,24 +143,36 @@ class TBModel:
         try:
             input_tensor = self.preprocess(image)
             
-            # Forward pass
-            output = self.model(input_tensor)
+            # Forward pass Model 1 (DenseNet)
+            output1 = self.model(input_tensor)
+            prob1 = torch.sigmoid(output1).item()
             
-            # Sigmoid for probability (Binary Classification)
-            start_prob = torch.sigmoid(output).item()
+            # Forward pass Model 2 (ResNet)
+            with torch.no_grad():
+                output2 = self.model2(input_tensor)
+                prob2 = torch.sigmoid(output2).item()
             
-            # Grad-CAM Backward pass
+            # ENSEMBLE: Average probabilities
+            final_prob = (prob1 + prob2) / 2.0
+            
+            # Grad-CAM Backward pass (always on primary model)
             self.model.zero_grad()
-            
-            # We want to explain "Why is this TB?" (increasing the output)
-            # So we backpropagate the raw output itself (logit)
-            score = output[0][0]
+            score = output1[0][0]
             score.backward()
             
             heatmap_raw = self.generate_heatmap()
+            
+            # --- APPLY LUNG SEGMENTATION MASK TO HEATMAP ---
+            # Focus the visual explanation only on relevant anatomical areas
+            lung_mask = self.generate_lung_mask(image)
+            if heatmap_raw is not None:
+                # Resize mask to heatmap size (7x7 usually)
+                mask_resized = cv2.resize(lung_mask, (heatmap_raw.shape[1], heatmap_raw.shape[0]))
+                heatmap_raw = heatmap_raw * mask_resized
+            
             heatmap_overlay = self.overlay_heatmap(image, heatmap_raw)
             
-            return start_prob, heatmap_overlay, heatmap_raw
+            return final_prob, heatmap_overlay, heatmap_raw
             
         except Exception as e:
             print(f"Error in prediction: {e}")

@@ -1,11 +1,11 @@
-import { AlertTriangle, CheckCircle2, Activity, Download, FileText } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Activity, Download, FileText, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 interface ResultsCardProps {
   result: {
-    risk: "high" | "low" | "moderate" | null;
+    risk: "high" | "low" | "moderate" | "uncertain" | null;
     confidence: number;
     timestamp: string;
     heatmap?: string;
@@ -101,6 +101,7 @@ const ResultsCard = ({ result }: ResultsCardProps) => {
     let riskColorR = 46, riskColorG = 125, riskColorB = 50; // green
     if (result.risk === "high") { riskColorR = 192; riskColorG = 57; riskColorB = 43; }
     else if (result.risk === "moderate") { riskColorR = 230; riskColorG = 126; riskColorB = 34; }
+    else if (result.risk === "uncertain") { riskColorR = 243; riskColorG = 156; riskColorB = 18; }
 
     doc.setFillColor(riskColorR, riskColorG, riskColorB);
     doc.roundedRect(margin, y, contentWidth, 22, 2, 2, "F");
@@ -270,6 +271,7 @@ const ResultsCard = ({ result }: ResultsCardProps) => {
 
   const isHighRisk = result.risk === "high";
   const isModerateRisk = result.risk === "moderate";
+  const isUncertain = result.risk === "uncertain";
 
   let statusColor = "text-success";
   let statusBg = "bg-success/10 border-success/20";
@@ -283,12 +285,12 @@ const ResultsCard = ({ result }: ResultsCardProps) => {
     statusIcon = <AlertTriangle className="w-8 h-8 text-destructive" />;
     statusText = "High Risk";
     progressBarColor = "bg-destructive";
-  } else if (isModerateRisk) {
-    statusColor = "text-warning";
-    statusBg = "bg-warning/10 border-warning/20";
-    statusIcon = <AlertTriangle className="w-8 h-8 text-warning" />;
-    statusText = "Moderate Risk";
-    progressBarColor = "bg-warning";
+  } else if (isModerateRisk || isUncertain) {
+    statusColor = isUncertain ? "text-amber-500" : "text-warning";
+    statusBg = isUncertain ? "bg-amber-50 border-amber-200" : "bg-warning/10 border-warning/20";
+    statusIcon = isUncertain ? <AlertCircle className="w-8 h-8 text-amber-500" /> : <AlertTriangle className="w-8 h-8 text-warning" />;
+    statusText = isUncertain ? "Priority Review Needed" : "Moderate Risk";
+    progressBarColor = isUncertain ? "bg-amber-500" : "bg-warning";
   }
 
   return (

@@ -67,6 +67,12 @@ def init_db():
         if 'patient_id' not in columns:
             print("Migrating: Adding patient_id column to screenings")
             cursor.execute("ALTER TABLE screenings ADD COLUMN patient_id INTEGER REFERENCES patients(id)")
+        if 'doctor_review_status' not in columns:
+            cursor.execute("ALTER TABLE screenings ADD COLUMN doctor_review_status TEXT DEFAULT 'pending'")
+        if 'doctor_notes' not in columns:
+            cursor.execute("ALTER TABLE screenings ADD COLUMN doctor_notes TEXT")
+        if 'final_risk' not in columns:
+            cursor.execute("ALTER TABLE screenings ADD COLUMN final_risk TEXT")
 
         # ── Users Table ──
         cursor.execute('''
@@ -86,6 +92,25 @@ def init_db():
         if 'signature_data' not in user_columns:
             print("Migrating: Adding signature_data column to app_users")
             cursor.execute("ALTER TABLE app_users ADD COLUMN signature_data TEXT")
+            
+        if 'role' not in user_columns:
+            print("Migrating: Adding role column to app_users")
+            cursor.execute("ALTER TABLE app_users ADD COLUMN role TEXT DEFAULT 'admin'")
+            
+        if 'is_approved' not in user_columns:
+            print("Migrating: Adding is_approved column to app_users")
+            cursor.execute("ALTER TABLE app_users ADD COLUMN is_approved INTEGER DEFAULT 1")
+            
+        # ── Audit Logs Table ──
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_email TEXT NOT NULL,
+                action TEXT NOT NULL,
+                details TEXT,
+                timestamp TEXT NOT NULL
+            )
+        ''')
 
         conn.commit()
         conn.close()
@@ -250,13 +275,14 @@ def log_result(filename, probability, result, original_path=None, heatmap_path=N
         cursor = conn.cursor()
         timestamp = datetime.datetime.now().isoformat()
 
+        # Default final_risk to the initial risk prediction
         cursor.execute('''
             INSERT INTO screenings (filename, result, probability, timestamp, original_path, heatmap_path,
-                                    patient_name, age, gender, notes, patient_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    patient_name, age, gender, notes, patient_id, doctor_review_status, final_risk)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (filename, result, probability, timestamp, original_path, heatmap_path,
-              patient_name, age, gender, notes, patient_id))
-
+              patient_name, age, gender, notes, patient_id, 'pending', result))
+        
         # Update patient's updated_at if linked
         if patient_id:
             cursor.execute("UPDATE patients SET updated_at = ? WHERE id = ?",
@@ -299,6 +325,25 @@ def delete_log(log_id):
     except Exception as e:
         print(f"Delete Log Error: {e}")
         return False
+
+
+def review_screening(log_id, review_status, doctor_notes, final_risk):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE screenings 
+            SET doctor_review_status = ?, doctor_notes = ?, final_risk = ?
+            WHERE id = ?
+        ''', (review_status, doctor_notes, final_risk, log_id))
+        
+        conn.commit()
+        conn.close()
+        return True, "Review saved successfully"
+    except Exception as e:
+        print(f"Review Error: {e}")
+        return False, str(e)
 
 
 # ══════════════════════════════════════════
@@ -357,20 +402,21 @@ def get_stats():
 
 
 # ══════════════════════════════════════════
-#  USER AUTH
+#  USER AUTH & RBAC
 # ══════════════════════════════════════════
 
-def create_user(email, password, username):
+def create_user(email, password, username, role="radiographer"):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
         try:
-            cursor.execute('INSERT INTO app_users (email, password, username) VALUES (?, ?, ?)',
-                           (email, password, username))
+            # New users default to is_approved = 0 (False)
+            cursor.execute('INSERT INTO app_users (email, password, username, role, is_approved) VALUES (?, ?, ?, ?, ?)',
+                           (email, password, username, role, 0))
             conn.commit()
             conn.close()
-            return True, "User registered successfully!"
+            return True, "User registered successfully! Pending approval from an admin."
         except sqlite3.IntegrityError:
             conn.close()
             return False, "User already exists with this email."
@@ -390,12 +436,75 @@ def authenticate_user(identifier, password):
         conn.close()
 
         if user:
-            return True, user['username']
-        return False, None
+            user_dict = dict(user)
+            if user_dict.get('is_approved') == 0:
+                return False, "Account pending admin approval."
+            return True, user_dict
+        return False, "Invalid credentials."
     except Exception as e:
         print(f"Auth Error: {e}")
-        return False, None
+        return False, "System error."
 
+def get_pending_users():
+    try:
+        conn = get_db_connection()
+        users = conn.execute("SELECT id, email, username, role, is_approved FROM app_users WHERE is_approved = 0 ORDER BY id DESC").fetchall()
+        conn.close()
+        return [dict(u) for u in users]
+    except Exception as e:
+        print(f"Get Pending Users Error: {e}")
+        return []
+
+def approve_user(email):
+    try:
+        conn = get_db_connection()
+        conn.execute("UPDATE app_users SET is_approved = 1 WHERE email = ?", (email,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Approve Error: {e}")
+        return False
+
+def reject_user(email):
+    try:
+        conn = get_db_connection()
+        conn.execute("DELETE FROM app_users WHERE email = ? AND is_approved = 0", (email,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Reject Error: {e}")
+        return False
+
+# ══════════════════════════════════════════
+#  AUDIT LOGS
+# ══════════════════════════════════════════
+
+def log_audit(user_email, action, details=""):
+    try:
+        if not user_email:
+            user_email = "system"
+        conn = get_db_connection()
+        timestamp = datetime.datetime.now().isoformat()
+        conn.execute('''
+            INSERT INTO audit_logs (user_email, action, details, timestamp)
+            VALUES (?, ?, ?, ?)
+        ''', (user_email, action, details, timestamp))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Audit Log Error: {e}")
+
+def get_audit_logs():
+    try:
+        conn = get_db_connection()
+        logs = conn.execute('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 200').fetchall()
+        conn.close()
+        return [dict(l) for l in logs]
+    except Exception as e:
+        print(f"Get Audit Logs Error: {e}")
+        return []
 
 # ══════════════════════════════════════════
 #  DIGITAL SIGNATURE
