@@ -9,50 +9,43 @@
 
 ## 📖 Overview
 
-The **TB Screening AI** is a robust web application designed to assist healthcare professionals in the early detection of Tuberculosis (TB) from Chest X-Rays.
+The **TB Screening AI** has evolved into a comprehensive, multi-disease chest X-ray diagnostic hub. 
 
-Powered by a **DenseNet121** deep learning model, the system analyzes uploaded X-ray images to predict the probability of TB infection. It goes beyond simple prediction by providing **Visual Heatmaps (Explainable AI)** and **Automated Medical Reports**, making it a transparent and practical tool for clinical settings.
+Powered by an ensemble of **DenseNet121 and ResNet50**, the system analyzes uploaded X-ray images to predict the probability of **Tuberculosis, Pneumonia, COVID-19, and Normal** findings simultaneously. It provides dynamic **Grad-CAM visual heatmaps**, automated **multilingual medical reports**, and rigorous **Role-Based Access Control (RBAC)** making it a transparent, secure, and practical tool for clinical settings.
 
 ---
 
-## ✨ Key Features
+## ✨ Key Capabilities
 
-*   **🧠 Advanced AI Analysis**: Utilizes a pre-trained `DenseNet121` model optimized for medical image classification.
-*   **🔍 Visual Explanations (Heatmaps)**: Generates Grad-CAM heatmaps to highlight suspicious regions in the lungs, helping doctors understand *why* a diagnosis was made.
-*   **📄 Automated PDF Reporting**: instantly generates downloadable, professional medical reports containing the diagnosis, confidence score, and visual analysis.
-*   **📊 Interactive Dashboard**: A modern, responsive React-based dashboard for easy patient screening and history tracking.
-*   **💾 Local Database**: Uses **SQLite** for lightweight, zero-config storage of user accounts and screening history logs.
-*   **🔒 Secure Auth**: Robust Login/Signup system to secure patient data.
+### 🫁 Multi-Disease Medical AI
+*   **Ensemble Engine**: Utilizes pre-trained `DenseNet121` and `ResNet50` models optimized for multi-class medical image classification.
+*   **Targeted Visual Explanations**: Generates dynamic Grad-CAM heatmaps that automatically target the most likely pathology to highlight suspicious regions in the lungs.
+*   **Heuristic Lung Segmentation**: Custom OpenCV masking isolates the lung fields, significantly reducing edge noise and false positive heatmaps.
+
+### 👩‍⚕️ Clinical Workflow & Security
+*   **Role-Based Access Control**: Secure login system with distinct privileges for `admin`, `doctor`, `radiographer`, and `patient`.
+*   **Admin Approval Gate**: New user registrations remain locked until manually verified by an Administrator.
+*   **Immutable Audit Trails**: A secure backend logger tracks every login, report generation, and AI override for HIPAA-ready compliance.
+*   **Doctor "Human-in-the-Loop" Review**: Doctors can review AI findings, override risk levels, input clinical notes, and electronically "sign" the diagnosis.
+
+### 🚀 Analytics & Reporting
+*   **Multilingual PDF Reports**: Instantly generates downloadable, professional medical reports in **English, Hindi, Telugu, and Kannada**.
+*   **Longitudinal History**: Compare the Patient's Latest and Previous X-rays side-by-side to track treatment progression over months.
+*   **Radar Chart Analysis**: A visual dashboard spider chart displaying the percentage breakdown of all 4 disease probabilities.
+*   **Hospital Analytics Dashboard**: 7-day trend aggregations helping clinical managers track screening volumes and risk distribution.
 
 ---
 
 ## 🏗️ System Architecture
 
-The system follows a modern decoupled architecture:
-
-![System Architecture](architecture_diagram.png)
-
-
 ### 🔄 System Workflow & Architecture Breakdown
-
-| **Step** | **Component** | **Action** | **Technical Details** |
-| :--- | :--- | :--- | :--- |
-| 1 | User (Doctor) | Uploads X-Ray | Interacts with the React Dashboard to select and upload a medical image. |
-| 2 | Frontend | Sends Request | Triggers a POST request to the /api/predict endpoint with the image payload. |
-| 3 | Backend API | Preprocessing | Flask server receives the image, validates the format, and converts it into a numerical Tensor. |
-| 4 | AI Engine | Inference | A pre-trained DenseNet121 model analyzes image features to calculate risk probability. |
-| 5 | Explainability | Generates Heatmap | Grad-CAM extracts feature maps to visualize the specific regions influencing the AI's decision. |
-| 6 | Database | Logging | Prediction results, metadata, and timestamps are stored in a local SQLite database. |
-| 7 | Frontend | Display & Report | Dashboard updates with the diagnosis and heatmap; a PDF Report is generated for the patient. |
-
-<br>
 
 | **Layer** | **Technology Stack** | **Role** |
 | :--- | :--- | :--- |
-| **🎨 Frontend** | **React + Vite + Tailwind** | Responsive UI, state management, and PDF generation. |
-| **⚙️ Backend** | **Flask (Python)** | REST API, Business logic, and AI model orchestration. |
-| **🧠 AI Model** | **PyTorch + DenseNet121** | Deep learning operations and image classification. |
-| **💾 Database** | **SQLite** | Lightweight local storage for user auth and screening logs. |
+| **🎨 Frontend** | **React + Vite + Tailwind + Recharts** | Modern glassmorphism UI, interactive data visualizations, and client-side routing. |
+| **⚙️ Backend** | **Flask (Python) + fpdf2** | REST API, RBAC validation, audit logging, and multilingual PDF typography orchestration. |
+| **🧠 AI Model** | **PyTorch (DenseNet + ResNet)** | Deep learning multi-disease classification and Grad-CAM backpropagation. |
+| **💾 Database** | **SQLite** | Local relational storage handling schemas for credentials, screening logic, and JSON disease probabilities. |
 
 ---
 

@@ -54,6 +54,7 @@ const StatsOverview = () => {
     fetch("http://localhost:5000/api/stats/chart")
       .then((res) => res.json())
       .then((data) => {
+        if (!Array.isArray(data)) return;
         // format date string for display
         const formatted = data.map((d: any) => ({
           ...d,
