@@ -1,5 +1,6 @@
-import { AlertTriangle, CheckCircle2, Activity, Download, FileText, AlertCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Activity, Download, FileText, AlertCircle, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -13,6 +14,12 @@ interface ResultsCardProps {
     patientName?: string;
     patientAge?: string;
     patientGender?: string;
+    disease_probs?: {
+      tb: number;
+      pneumonia: number;
+      covid: number;
+      normal: number;
+    };
     dicom_metadata?: {
       patient_name?: string;
       study_date?: string;
@@ -386,6 +393,52 @@ const ResultsCard = ({ result }: ResultsCardProps) => {
           </div>
         </div>
       </div>
+
+      {/* Multi-Disease Radar Chart */}
+      {result.disease_probs && (
+        <div className="mt-4 p-4 glass rounded-xl border border-border/50">
+          <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <Shield className="w-4 h-4 text-primary" />
+            Multi-Disease AI Analysis
+          </h4>
+          <div className="w-full" style={{ height: 220 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart cx="50%" cy="50%" outerRadius="70%" data={[
+                { disease: 'TB', value: result.disease_probs.tb, fullMark: 100 },
+                { disease: 'Pneumonia', value: result.disease_probs.pneumonia, fullMark: 100 },
+                { disease: 'COVID-19', value: result.disease_probs.covid, fullMark: 100 },
+                { disease: 'Normal', value: result.disease_probs.normal, fullMark: 100 },
+              ]}>
+                <PolarGrid stroke="hsl(var(--border))" />
+                <PolarAngleAxis dataKey="disease" tick={{ fill: 'hsl(var(--foreground))', fontSize: 11 }} />
+                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9 }} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' }}
+                  formatter={(value: number) => [`${value.toFixed(1)}%`, 'Confidence']}
+                />
+                <Radar name="Confidence" dataKey="value" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.25} strokeWidth={2} />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Secondary Suspicions */}
+          <div className="mt-3 space-y-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Secondary Suspicions</p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { label: 'Pneumonia', value: result.disease_probs.pneumonia, color: 'text-blue-500' },
+                { label: 'COVID-19', value: result.disease_probs.covid, color: 'text-purple-500' },
+                { label: 'Normal', value: result.disease_probs.normal, color: 'text-emerald-500' },
+              ].map(item => (
+                <div key={item.label} className="text-center p-2 bg-muted/30 rounded-lg">
+                  <p className={`text-lg font-bold ${item.color}`}>{item.value.toFixed(1)}%</p>
+                  <p className="text-[10px] text-muted-foreground">{item.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 flex flex-col gap-3">
         <Button onClick={generatePDF} className="w-full gap-2" variant="outline">

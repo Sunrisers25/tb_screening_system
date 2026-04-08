@@ -73,6 +73,9 @@ def init_db():
             cursor.execute("ALTER TABLE screenings ADD COLUMN doctor_notes TEXT")
         if 'final_risk' not in columns:
             cursor.execute("ALTER TABLE screenings ADD COLUMN final_risk TEXT")
+        if 'disease_probs' not in columns:
+            print("Migrating: Adding disease_probs JSON column to screenings")
+            cursor.execute("ALTER TABLE screenings ADD COLUMN disease_probs TEXT")
 
         # ── Users Table ──
         cursor.execute('''
@@ -269,19 +272,22 @@ def search_patients(query):
 # ══════════════════════════════════════════
 
 def log_result(filename, probability, result, original_path=None, heatmap_path=None,
-               patient_name="Unknown", age=None, gender=None, notes=None, patient_id=None):
+               patient_name="Unknown", age=None, gender=None, notes=None, patient_id=None,
+               disease_probs=None):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         timestamp = datetime.datetime.now().isoformat()
 
-        # Default final_risk to the initial risk prediction
+        # Serialize disease probabilities as JSON
+        disease_probs_json = json.dumps(disease_probs) if disease_probs else None
+
         cursor.execute('''
             INSERT INTO screenings (filename, result, probability, timestamp, original_path, heatmap_path,
-                                    patient_name, age, gender, notes, patient_id, doctor_review_status, final_risk)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    patient_name, age, gender, notes, patient_id, doctor_review_status, final_risk, disease_probs)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (filename, result, probability, timestamp, original_path, heatmap_path,
-              patient_name, age, gender, notes, patient_id, 'pending', result))
+              patient_name, age, gender, notes, patient_id, 'pending', result, disease_probs_json))
         
         # Update patient's updated_at if linked
         if patient_id:
@@ -307,6 +313,12 @@ def get_logs():
             log_dict = dict(log)
             if 'result' in log_dict:
                 log_dict['risk'] = log_dict['result']
+            # Unpack disease_probs JSON if present
+            if log_dict.get('disease_probs'):
+                try:
+                    log_dict['disease_probs'] = json.loads(log_dict['disease_probs'])
+                except json.JSONDecodeError:
+                    log_dict['disease_probs'] = None
             results.append(log_dict)
 
         return results

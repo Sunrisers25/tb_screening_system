@@ -163,50 +163,71 @@ def is_dicom_file(file_storage):
 #  CLINICAL FINDINGS GENERATOR
 # ══════════════════════════════════════════
 
-def generate_clinical_findings(probability, heatmap_raw):
-    confidence = round(probability * 100, 1)
-
-    if heatmap_raw is None:
-        return f"Assessment based on global features. Probability of TB: {confidence}%."
-
-    threshold = 0.4
-    active_pixels = np.sum(heatmap_raw > threshold)
-    total_pixels = heatmap_raw.size
-    coverage_ratio = active_pixels / total_pixels
-
-    if coverage_ratio > 0.20:
-        extent_str = "extensive/diffuse"
-    elif coverage_ratio > 0.05:
-        extent_str = "moderate spread"
-    else:
-        extent_str = "focal/localized"
-
-    max_intensity = np.max(heatmap_raw)
-
-    if max_intensity > 0.8:
-        intensity_str = "High density opacity"
-    elif max_intensity > 0.5:
-        intensity_str = "Ground-glass opacity"
-    else:
-        intensity_str = "Faint shadowing"
-
-    if probability > 0.65:
+def generate_clinical_findings(disease_probs, heatmap_raw):
+    """
+    Generate clinical notes based on multi-disease probabilities.
+    disease_probs: {'tb': 0.72, 'pneumonia': 0.15, 'covid': 0.08, 'normal': 0.35}
+    """
+    from model import DISEASE_LABELS
+    
+    tb_prob = disease_probs.get('tb', 0)
+    pneumonia_prob = disease_probs.get('pneumonia', 0)
+    covid_prob = disease_probs.get('covid', 0)
+    normal_prob = disease_probs.get('normal', 0)
+    
+    tb_conf = round(tb_prob * 100, 1)
+    
+    # Determine heatmap coverage
+    coverage_ratio = 0
+    intensity_str = "Faint shadowing"
+    extent_str = "focal/localized"
+    
+    if heatmap_raw is not None:
+        threshold = 0.4
+        active_pixels = np.sum(heatmap_raw > threshold)
+        total_pixels = heatmap_raw.size
+        coverage_ratio = active_pixels / total_pixels
+        
+        if coverage_ratio > 0.20:
+            extent_str = "extensive/diffuse"
+        elif coverage_ratio > 0.05:
+            extent_str = "moderate spread"
+        
+        max_intensity = np.max(heatmap_raw)
+        if max_intensity > 0.8:
+            intensity_str = "High density opacity"
+        elif max_intensity > 0.5:
+            intensity_str = "Ground-glass opacity"
+    
+    # === PRIMARY DISEASE: Tuberculosis ===
+    if tb_prob > 0.65:
         note = (f"{intensity_str} detected in {extent_str} pattern (approx {int(coverage_ratio*100)}% lung area). "
-                f"Findings are consistent with Active Tuberculosis ({confidence}% confidence). "
+                f"Findings are strongly consistent with Active Tuberculosis ({tb_conf}% confidence). "
                 "Immediate sputum smear microscopy and clinical correlation recommended.")
-    elif probability < 0.35:
+    elif tb_prob < 0.35:
         if coverage_ratio > 0.05:
-            note = (f"AI detects {extent_str} {intensity_str.lower()}, but overall probability of Tuberculosis is low ({confidence}%). "
+            note = (f"AI detects {extent_str} {intensity_str.lower()}, but overall probability of Tuberculosis is low ({tb_conf}%). "
                     "Likely non-specific or scarring. Standard routine follow-up recommended.")
         else:
-            note = (f"No significant radiologic anomalies detected (Confidence: {100-confidence}%). "
-                    "Lungs appear clear. Standard routine check-up recommended.")
+            note = (f"No significant TB-related radiologic anomalies detected. "
+                    f"TB Probability: {tb_conf}%. Lungs appear predominantly clear.")
     else:
         note = (f"{intensity_str} detected with {extent_str} distribution. "
-                f"AI assessment is inconclusive ({confidence}% probability). "
-                "This case is marked for priority Radiologist review. "
-                "Suggests potential early-stage infection or atypical pulmonary condition.")
-
+                f"AI assessment for TB is inconclusive ({tb_conf}% probability). "
+                "This case is marked for priority Radiologist review.")
+    
+    # === SECONDARY SUSPICIONS ===
+    secondary = []
+    if pneumonia_prob > 0.30:
+        secondary.append(f"Pneumonia ({round(pneumonia_prob*100, 1)}%)")
+    if covid_prob > 0.30:
+        secondary.append(f"COVID-19 ({round(covid_prob*100, 1)}%)")
+    
+    if secondary:
+        note += f" Secondary AI suspicions flagged: {', '.join(secondary)}. Cross-clinical evaluation advised."
+    elif normal_prob > 0.60:
+        note += " No notable secondary pathologies detected."
+    
     return note
 
 
@@ -272,23 +293,29 @@ def predict():
 
         # ── Run AI Model ──
         if model:
-            probability, heatmap, heatmap_raw = model.predict(image)
+            result_data, heatmap, heatmap_raw = model.predict(image)
         else:
-            probability = 0.5
+            result_data = {'tb': 0.5, 'pneumonia': 0.1, 'covid': 0.05, 'normal': 0.4}
             heatmap = None
             heatmap_raw = None
 
         # Handle validation failure from model
-        if probability is None:
+        if result_data is None:
             return jsonify({'error': heatmap}), 400
 
-        # Generate AI Notes
-        notes = generate_clinical_findings(probability, heatmap_raw)
+        # result_data is now a dict: {'tb': 0.72, 'pneumonia': 0.15, ...}
+        disease_probs = result_data
+        
+        # Primary metric: TB probability (this system prioritizes TB)
+        tb_probability = disease_probs.get('tb', 0.5)
 
-        # Determine risk
-        if probability > 0.65:
+        # Generate AI Notes using full disease context
+        notes = generate_clinical_findings(disease_probs, heatmap_raw)
+
+        # Determine TB-centric risk level
+        if tb_probability > 0.65:
             risk = "high"
-        elif probability < 0.35:
+        elif tb_probability < 0.35:
             risk = "low"
         else:
             risk = "uncertain"
@@ -317,7 +344,7 @@ def predict():
         try:
             db.log_result(
                 filename=file.filename,
-                probability=probability,
+                probability=tb_probability,
                 result=risk,
                 original_path=f"/static/reports/{orig_filename}",
                 heatmap_path=heatmap_path_str,
@@ -325,7 +352,8 @@ def predict():
                 age=age,
                 gender=gender,
                 notes=notes,
-                patient_id=int(patient_id) if patient_id else None
+                patient_id=int(patient_id) if patient_id else None,
+                disease_probs=disease_probs
             )
         except Exception as e:
             print(f"Logging error: {e}")
@@ -335,10 +363,16 @@ def predict():
 
         response_data = {
             'risk': risk,
-            'confidence': round(probability * 100, 2),
+            'confidence': round(tb_probability * 100, 2),
             'timestamp': datetime.datetime.now().strftime("%I:%M %p"),
             'heatmap': heatmap_b64,
-            'notes': notes
+            'notes': notes,
+            'disease_probs': {
+                'tb': round(disease_probs.get('tb', 0) * 100, 1),
+                'pneumonia': round(disease_probs.get('pneumonia', 0) * 100, 1),
+                'covid': round(disease_probs.get('covid', 0) * 100, 1),
+                'normal': round(disease_probs.get('normal', 0) * 100, 1)
+            }
         }
 
         # Include DICOM metadata if available
@@ -774,6 +808,54 @@ def generate_pdf(log_id):
             if os.path.exists(path):
                 pdf.image(path, x=110, y=y_start, w=90)
                 pdf.text(110, y_start + 95, t['ai_analysis'])
+
+        # ── Multi-Disease Breakdown Table ──
+        import json as json_module
+        disease_probs_raw = log.get('disease_probs')
+        if disease_probs_raw:
+            if isinstance(disease_probs_raw, str):
+                try:
+                    disease_probs_raw = json_module.loads(disease_probs_raw)
+                except:
+                    disease_probs_raw = None
+            
+            if disease_probs_raw:
+                table_y = y_start + 100
+                if table_y > 230:
+                    pdf.add_page()
+                    if font_family != "Arial":
+                        pdf.set_font(font_family, '', 12)
+                    table_y = 20
+                
+                pdf.set_y(table_y)
+                if font_family == "Arial":
+                    pdf.set_font("Arial", 'B', 11)
+                else:
+                    pdf.set_font(font_family, '', 11)
+                pdf.set_text_color(30, 30, 30)
+                pdf.cell(0, 8, "Multi-Disease AI Analysis", ln=True)
+                
+                pdf.set_font(font_family if font_family != "Arial" else "Arial", '', 10)
+                
+                # Table header
+                pdf.set_fill_color(240, 243, 248)
+                pdf.set_text_color(80, 80, 80)
+                pdf.cell(60, 7, "Condition", 1, 0, 'C', True)
+                pdf.cell(40, 7, "Probability", 1, 0, 'C', True)
+                pdf.cell(50, 7, "Status", 1, 1, 'C', True)
+                
+                # Table rows
+                pdf.set_text_color(30, 30, 30)
+                disease_labels = {'tb': 'Tuberculosis', 'pneumonia': 'Pneumonia', 'covid': 'COVID-19', 'normal': 'Normal'}
+                for key, label in disease_labels.items():
+                    prob = disease_probs_raw.get(key, 0)
+                    pct = round(prob * 100, 1)
+                    status = "High" if pct > 65 else ("Moderate" if pct > 35 else "Low")
+                    if key == 'normal':
+                        status = "Healthy" if pct > 50 else "Abnormal"
+                    pdf.cell(60, 7, label, 1)
+                    pdf.cell(40, 7, f"{pct}%", 1, 0, 'C')
+                    pdf.cell(50, 7, status, 1, 1, 'C')
 
         # ── Digital Signature ──
         # Try to find the doctor's signature from the request header or fallback

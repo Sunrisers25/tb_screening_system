@@ -21,10 +21,20 @@ const Dashboard = () => {
     patientName?: string;
     patientAge?: string;
     patientGender?: string;
+    disease_probs?: { tb: number; pneumonia: number; covid: number; normal: number };
   } | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchParams] = useSearchParams();
-  const currentView = searchParams.get("view") || "overview";
+  const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try { setUser(JSON.parse(storedUser)); } catch (e) {}
+    }
+  }, []);
+
+  const currentView = searchParams.get("view") || (user?.role === 'patient' ? 'history' : 'overview');
 
   const getTitle = () => {
     switch (currentView) {
@@ -40,7 +50,7 @@ const Dashboard = () => {
       case "history": return "View past screening records";
       case "patients": return "Manage patient records and medical history";
       case "settings": return "Manage application preferences";
-      default: return "Upload chest X-rays for TB risk assessment";
+      default: return user?.role === 'patient' ? "View your past screening records" : "Upload chest X-rays for TB risk assessment";
     }
   };
 
@@ -77,6 +87,7 @@ const Dashboard = () => {
         patientName: metadata.name,
         patientAge: metadata.age,
         patientGender: metadata.gender,
+        disease_probs: data.disease_probs || undefined,
       });
 
     } catch (error) {

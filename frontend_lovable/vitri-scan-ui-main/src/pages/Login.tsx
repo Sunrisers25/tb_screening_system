@@ -115,6 +115,7 @@ const Login = () => {
                   >
                     <option value="radiographer">Radiographer (Upload & View)</option>
                     <option value="doctor">Doctor (Clinical Review)</option>
+                    <option value="patient">Patient (View My Records)</option>
                   </select>
                 </div>
               </>

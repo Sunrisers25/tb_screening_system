@@ -1,17 +1,26 @@
 import { Link, useLocation } from "react-router-dom";
 import { Activity, LayoutDashboard, History, Settings, LogOut, Users } from "lucide-react";
 
+import { useEffect, useState } from "react";
+
 const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard?view=overview" },
-  { icon: Users, label: "Patients", href: "/dashboard?view=patients" },
-  { icon: History, label: "History", href: "/dashboard?view=history" },
-  { icon: Settings, label: "Settings", href: "/dashboard?view=settings" },
+  { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard?view=overview", roles: ['admin', 'doctor', 'radiographer'] },
+  { icon: Users, label: "Patients", href: "/dashboard?view=patients", roles: ['admin', 'doctor', 'radiographer'] },
+  { icon: History, label: "History", href: "/dashboard?view=history", roles: ['admin', 'doctor', 'radiographer', 'patient'] },
+  { icon: Settings, label: "Settings", href: "/dashboard?view=settings", roles: ['admin', 'doctor', 'radiographer', 'patient'] },
 ];
 
 const DashboardSidebar = () => {
+  const [user, setUser] = useState<{ role: string } | null>(null);
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) setUser(JSON.parse(storedUser));
+  }, []);
+
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
-  const currentView = searchParams.get("view") || "overview";
+  const currentView = searchParams.get("view") || (user?.role === 'patient' ? 'history' : 'overview');
 
   return (
     <aside className="hidden lg:flex flex-col w-64 border-r border-border bg-card min-h-screen">
@@ -27,7 +36,9 @@ const DashboardSidebar = () => {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
-        {navItems.map((item) => {
+        {navItems
+          .filter(item => item.roles.includes(user?.role || 'radiographer'))
+          .map((item) => {
           // Extract view param from href
           const hrefUrl = new URL(item.href, "http://dummy.com"); // base needed for relative paths
           const itemView = hrefUrl.searchParams.get("view");
@@ -44,7 +55,7 @@ const DashboardSidebar = () => {
                 }`}
             >
               <item.icon className="w-5 h-5" />
-              {item.label}
+              {user?.role === 'patient' && item.label === 'History' ? 'My Records' : item.label}
             </Link>
           );
         })}

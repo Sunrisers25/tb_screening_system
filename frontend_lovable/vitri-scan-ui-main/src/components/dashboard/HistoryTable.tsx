@@ -26,6 +26,7 @@ interface ScreeningRecord {
   doctor_review_status?: "pending" | "approved" | "overridden";
   doctor_notes?: string;
   final_risk?: "high" | "low" | "moderate" | "uncertain";
+  disease_probs?: { tb: number; pneumonia: number; covid: number; normal: number };
 }
 
 interface HistoryTableProps {
@@ -65,8 +66,27 @@ const HistoryTable = ({ limit }: HistoryTableProps) => {
           heatmap_path: log.heatmap_path ? `http://localhost:5000${log.heatmap_path}` : undefined,
           doctor_review_status: log.doctor_review_status || 'pending',
           doctor_notes: log.doctor_notes || '',
-          final_risk: log.final_risk || log.risk
+          final_risk: log.final_risk || log.risk,
+          disease_probs: log.disease_probs ? {
+            tb: Math.round(log.disease_probs.tb * 100 * 10) / 10,
+            pneumonia: Math.round(log.disease_probs.pneumonia * 100 * 10) / 10,
+            covid: Math.round(log.disease_probs.covid * 100 * 10) / 10,
+            normal: Math.round(log.disease_probs.normal * 100 * 10) / 10,
+          } : undefined
         }));
+
+        // Client-side filtering if the logged-in user is a patient
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          try {
+             const u = JSON.parse(storedUser);
+             if (u.role === 'patient') {
+                setData(mappedData.filter(m => m.patientName === u.name));
+                return;
+             }
+          } catch(e) {}
+        }
+        
         setData(mappedData);
       }
     } catch (error) {
@@ -222,16 +242,16 @@ const HistoryTable = ({ limit }: HistoryTableProps) => {
 
                   let color = "text-success";
                   let Icon = CheckCircle2;
-                  let label = "Low Risk";
+                  let label = "TB: Low";
 
                   if (isHigh) {
                     color = "text-destructive";
                     Icon = AlertTriangle;
-                    label = "High Risk";
+                    label = "TB: High";
                   } else if (isModerate) {
                     color = "text-warning";
                     Icon = AlertTriangle;
-                    label = "Moderate Risk";
+                    label = "TB: Moderate";
                   }
 
                   return (
