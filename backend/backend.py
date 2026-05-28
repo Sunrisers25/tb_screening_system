@@ -10,9 +10,48 @@ from fpdf import FPDF
 import os
 import numpy as np
 import csv
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
+from functools import wraps
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
+
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'tb_screening_super_secret_key_change_me_in_prod')
+serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
+
+def generate_auth_token(email):
+    return serializer.dumps({'email': email}, salt='auth-salt')
+
+def verify_auth_token(token):
+    try:
+        data = serializer.loads(token, salt='auth-salt', max_age=86400) # 24 hours
+        return data['email']
+    except (SignatureExpired, BadSignature):
+        return None
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        # Check Authorization header
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            if auth_header.startswith('Bearer '):
+                token = auth_header.split(' ')[1]
+        
+        # Check query parameters as fallback (useful for browser file downloads)
+        if not token and 'token' in request.args:
+            token = request.args.get('token')
+        
+        if not token:
+            return jsonify({'success': False, 'message': 'Token is missing!'}), 401
+        
+        email = verify_auth_token(token)
+        if not email:
+            return jsonify({'success': False, 'message': 'Token is invalid or expired!'}), 401
+            
+        return f(*args, **kwargs)
+    return decorated
 
 os.makedirs('static/reports', exist_ok=True)
 
@@ -245,6 +284,7 @@ def status():
 # ══════════════════════════════════════════
 
 @app.route('/api/stats', methods=['GET'])
+@token_required
 def stats():
     return jsonify(db.get_stats())
 
@@ -254,6 +294,7 @@ def stats():
 # ══════════════════════════════════════════
 
 @app.route('/api/predict', methods=['POST'])
+@token_required
 def predict():
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
@@ -399,8 +440,10 @@ def login():
     success, result = db.authenticate_user(email, password)
 
     if success:
+        token = generate_auth_token(result['email'])
         return jsonify({
             'success': True,
+            'token': token,
             'user': {
                 'name': result['username'],
                 'email': result['email'],
@@ -435,10 +478,12 @@ def signup():
 # ══════════════════════════════════════════
 
 @app.route('/api/admin/users/pending', methods=['GET'])
+@token_required
 def get_pending_users():
     return jsonify(db.get_pending_users())
 
 @app.route('/api/admin/users/approve', methods=['PUT'])
+@token_required
 def approve_user():
     data = request.json
     email = data.get('email')
@@ -449,6 +494,7 @@ def approve_user():
     return jsonify({'success': False, 'message': 'Failed to approve user'}), 500
 
 @app.route('/api/admin/users/reject', methods=['PUT'])
+@token_required
 def reject_user():
     data = request.json
     email = data.get('email')
@@ -459,6 +505,7 @@ def reject_user():
     return jsonify({'success': False, 'message': 'Failed to reject user'}), 500
 
 @app.route('/api/audit_logs', methods=['GET'])
+@token_required
 def fetch_audit_logs():
     return jsonify(db.get_audit_logs())
 
@@ -468,6 +515,7 @@ def fetch_audit_logs():
 # ══════════════════════════════════════════
 
 @app.route('/api/auth/signature', methods=['POST'])
+@token_required
 def save_signature():
     data = request.json
     email = data.get('email')
@@ -484,6 +532,7 @@ def save_signature():
 
 
 @app.route('/api/auth/signature/<email>', methods=['GET'])
+@token_required
 def get_signature(email):
     signature, username = db.get_signature(email)
     if signature:
@@ -497,6 +546,7 @@ def get_signature(email):
 # ══════════════════════════════════════════
 
 @app.route('/api/patients', methods=['POST'])
+@token_required
 def create_patient():
     data = request.json
 
@@ -520,6 +570,7 @@ def create_patient():
 
 
 @app.route('/api/patients', methods=['GET'])
+@token_required
 def list_patients():
     search = request.args.get('search', None)
     patients = db.get_all_patients(search_query=search)
@@ -527,6 +578,7 @@ def list_patients():
 
 
 @app.route('/api/patients/<int:patient_id>', methods=['GET'])
+@token_required
 def get_patient(patient_id):
     patient = db.get_patient(patient_id)
     if patient:
@@ -536,6 +588,7 @@ def get_patient(patient_id):
 
 
 @app.route('/api/patients/<int:patient_id>', methods=['PUT'])
+@token_required
 def update_patient(patient_id):
     data = request.json
     success, msg = db.update_patient(patient_id, **data)
@@ -551,6 +604,7 @@ def update_patient(patient_id):
 # ══════════════════════════════════════════
 
 @app.route('/api/export_csv', methods=['GET'])
+@token_required
 def export_csv():
     try:
         logs = db.get_logs()
@@ -584,6 +638,7 @@ def export_csv():
 
 
 @app.route('/api/export_pdf_summary', methods=['GET'])
+@token_required
 def export_pdf_summary():
     try:
         logs = db.get_logs()
@@ -628,11 +683,13 @@ def export_pdf_summary():
 # ══════════════════════════════════════════
 
 @app.route('/api/stats', methods=['GET'])
+@token_required
 def get_dashboard_stats():
     stats = db.get_stats()
     return jsonify(stats)
 
 @app.route('/api/stats/chart', methods=['GET'])
+@token_required
 def get_chart_stats():
     try:
         conn = db.get_db_connection()
@@ -661,12 +718,14 @@ def get_chart_stats():
 
 
 @app.route('/api/history', methods=['GET'])
+@token_required
 def history():
     logs = db.get_logs()
     return jsonify(logs)
 
 
 @app.route('/api/history/<int:log_id>', methods=['DELETE'])
+@token_required
 def delete_history_item(log_id):
     success = db.delete_log(log_id)
     if success:
@@ -678,6 +737,7 @@ def delete_history_item(log_id):
 
 
 @app.route('/api/history/<int:log_id>/review', methods=['PUT'])
+@token_required
 def review_history_item(log_id):
     data = request.json
     review_status = data.get('review_status')
@@ -699,6 +759,7 @@ def review_history_item(log_id):
 
 
 @app.route('/api/history/<int:log_id>/pdf', methods=['GET'])
+@token_required
 def generate_pdf(log_id):
     try:
         conn = db.get_db_connection()

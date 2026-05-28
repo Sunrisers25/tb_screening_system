@@ -47,10 +47,10 @@ session.json
 # ============================================================
 # Frontend - Node / Vite
 # ============================================================
-frontend_lovable/vitri-scan-ui-main/node_modules/
-frontend_lovable/vitri-scan-ui-main/dist/
-frontend_lovable/vitri-scan-ui-main/dist-ssr/
-frontend_lovable/vitri-scan-ui-main/*.local
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
 
 # ============================================================
 # OS & Editor
@@ -78,6 +78,6 @@ data/
 # ============================================================
 # Static uploads (generated at runtime)
 # ============================================================
-static/uploads/
-static/heatmaps/
-static/reports/
+backend/static/uploads/
+backend/static/heatmaps/
+backend/static/reports/

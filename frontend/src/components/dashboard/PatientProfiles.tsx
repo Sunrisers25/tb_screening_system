@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { authenticatedFetch } from "@/lib/apiHelper";
+import { API_BASE_URL } from "@/lib/config";
 
 interface Patient {
   id: number;
@@ -68,9 +70,9 @@ const PatientProfiles = () => {
   const fetchPatients = async () => {
     try {
       const url = searchQuery
-        ? `http://localhost:5000/api/patients?search=${encodeURIComponent(searchQuery)}`
-        : "http://localhost:5000/api/patients";
-      const response = await fetch(url);
+        ? `/api/patients?search=${encodeURIComponent(searchQuery)}`
+        : "/api/patients";
+      const response = await authenticatedFetch(url);
       if (response.ok) {
         const data = await response.json();
         setPatients(data);
@@ -88,7 +90,7 @@ const PatientProfiles = () => {
 
   const fetchPatientDetail = async (id: number) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/patients/${id}`);
+      const response = await authenticatedFetch(`/api/patients/${id}`);
       if (response.ok) {
         const data = await response.json();
         setSelectedPatient(data);
@@ -110,7 +112,7 @@ const PatientProfiles = () => {
     }
 
     try {
-      const response = await fetch("http://localhost:5000/api/patients", {
+      const response = await authenticatedFetch("/api/patients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -339,7 +341,7 @@ const PatientProfiles = () => {
                           <p className="text-xs text-center text-muted-foreground font-medium">Original</p>
                           <div className="aspect-square bg-black rounded-lg overflow-hidden border border-border">
                             {s.original_path ? (
-                              <img src={`http://localhost:5000${s.original_path}`} className="w-full h-full object-contain" alt="Original" />
+                              <img src={`${API_BASE_URL}${s.original_path}`} className="w-full h-full object-contain" alt="Original" />
                             ) : (
                               <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No Image</div>
                             )}
@@ -349,7 +351,7 @@ const PatientProfiles = () => {
                           <p className="text-xs text-center text-primary font-medium">AI Heatmap</p>
                           <div className="aspect-square bg-black rounded-lg overflow-hidden border border-border">
                             {s.heatmap_path ? (
-                              <img src={`http://localhost:5000${s.heatmap_path}`} className="w-full h-full object-contain" alt="Heatmap" />
+                              <img src={`${API_BASE_URL}${s.heatmap_path}`} className="w-full h-full object-contain" alt="Heatmap" />
                             ) : (
                               <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No Heatmap</div>
                             )}

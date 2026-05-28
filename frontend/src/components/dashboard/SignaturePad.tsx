@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { Pen, RotateCcw, Save, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { authenticatedFetch } from "@/lib/apiHelper";
 
 interface SignaturePadProps {
   userEmail: string;
@@ -17,7 +18,7 @@ const SignaturePad = ({ userEmail }: SignaturePadProps) => {
   // Fetch existing signature on mount
   useEffect(() => {
     if (userEmail) {
-      fetch(`http://localhost:5000/api/auth/signature/${userEmail}`)
+      authenticatedFetch(`/api/auth/signature/${userEmail}`)
         .then((res) => res.json())
         .then((data) => {
           if (data.success && data.signature) {
@@ -150,7 +151,7 @@ const SignaturePad = ({ userEmail }: SignaturePadProps) => {
     const signatureData = canvas.toDataURL("image/png");
 
     try {
-      const response = await fetch("http://localhost:5000/api/auth/signature", {
+      const response = await authenticatedFetch("/api/auth/signature", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: userEmail, signature: signatureData }),

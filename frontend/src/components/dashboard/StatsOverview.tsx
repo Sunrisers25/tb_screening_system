@@ -41,17 +41,19 @@ interface ChartData {
   low_risk: number;
 }
 
+import { authenticatedFetch } from "@/lib/apiHelper";
+
 const StatsOverview = () => {
   const [statsData, setStatsData] = useState<StatsData | null>(null);
   const [chartData, setChartData] = useState<ChartData[]>([]);
 
   useEffect(() => {
-    fetch("http://localhost:5000/api/stats")
+    authenticatedFetch("/api/stats")
       .then((res) => res.json())
       .then((data) => setStatsData(data))
       .catch(console.error);
       
-    fetch("http://localhost:5000/api/stats/chart")
+    authenticatedFetch("/api/stats/chart")
       .then((res) => res.json())
       .then((data) => {
         if (!Array.isArray(data)) return;

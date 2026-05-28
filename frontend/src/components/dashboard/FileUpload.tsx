@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+import { authenticatedFetch } from "@/lib/apiHelper";
+
 export interface PatientMetadata {
   name: string;
   age: string;
@@ -37,7 +39,7 @@ const FileUpload = ({ onFileSelect }: FileUploadProps) => {
 
   // Fetch existing patients for the dropdown
   useEffect(() => {
-    fetch("http://localhost:5000/api/patients")
+    authenticatedFetch("/api/patients")
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {

@@ -2,6 +2,7 @@ import sqlite3
 import os
 import datetime
 import json
+from werkzeug.security import generate_password_hash, check_password_hash
 
 DB_FILE = "tb_screening_logs.db"
 SESSION_FILE = "session.json"
@@ -422,13 +423,26 @@ def create_user(email, password, username, role="radiographer"):
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Check if there are any existing users
+        cursor.execute("SELECT COUNT(*) as count FROM app_users")
+        count = cursor.fetchone()['count']
+        
+        # If it's the very first user, auto-approve them as an admin so they don't get locked out
+        is_approved = 1 if count == 0 else 0
+        assigned_role = "admin" if count == 0 else role
+
+        # Hash password before storing
+        hashed_password = generate_password_hash(password)
+
         try:
-            # New users default to is_approved = 0 (False)
             cursor.execute('INSERT INTO app_users (email, password, username, role, is_approved) VALUES (?, ?, ?, ?, ?)',
-                           (email, password, username, role, 0))
+                           (email, hashed_password, username, assigned_role, is_approved))
             conn.commit()
             conn.close()
-            return True, "User registered successfully! Pending approval from an admin."
+            if is_approved == 1:
+                return True, "First user registered successfully as an approved Admin!"
+            else:
+                return True, "User registered successfully! Pending approval from an admin."
         except sqlite3.IntegrityError:
             conn.close()
             return False, "User already exists with this email."
@@ -442,13 +456,17 @@ def authenticate_user(identifier, password):
         conn = get_db_connection()
         user = conn.execute('''
             SELECT * FROM app_users
-            WHERE (email = ? OR username = ?) AND password = ?
-        ''', (identifier, identifier, password)).fetchone()
+            WHERE email = ? OR username = ?
+        ''', (identifier, identifier)).fetchone()
 
         conn.close()
 
         if user:
             user_dict = dict(user)
+            # Verify hashed password
+            if not check_password_hash(user_dict['password'], password):
+                return False, "Invalid credentials."
+            
             if user_dict.get('is_approved') == 0:
                 return False, "Account pending admin approval."
             return True, user_dict

@@ -10,6 +10,8 @@ import { Activity, Menu, X } from "lucide-react";
 import Settings from "@/components/dashboard/Settings";
 import { Button } from "@/components/ui/button";
 
+import { authenticatedFetch } from "@/lib/apiHelper";
+
 const Dashboard = () => {
   const [result, setResult] = useState<{
     risk: "high" | "low" | "moderate" | null;
@@ -65,7 +67,7 @@ const Dashboard = () => {
     }
 
     try {
-      const response = await fetch("http://localhost:5000/api/predict", {
+      const response = await authenticatedFetch("/api/predict", {
         method: "POST",
         body: formData,
       });

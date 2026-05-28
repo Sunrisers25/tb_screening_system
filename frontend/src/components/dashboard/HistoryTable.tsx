@@ -1,6 +1,8 @@
 import { History, AlertTriangle, CheckCircle2, Eye, Trash2, X, FileText, Download, FileSpreadsheet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { authenticatedFetch } from "@/lib/apiHelper";
+import { API_BASE_URL } from "@/lib/config";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,7 +50,7 @@ const HistoryTable = ({ limit }: HistoryTableProps) => {
 
   const fetchData = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/history");
+      const response = await authenticatedFetch("/api/history");
       if (response.ok) {
         const logs = await response.json();
         const mappedData: ScreeningRecord[] = logs.map((log: any) => ({
@@ -62,8 +64,8 @@ const HistoryTable = ({ limit }: HistoryTableProps) => {
           confidence: Math.round(log.probability * 100),
           status: "Completed",
           filename: log.filename,
-          original_path: log.original_path ? `http://localhost:5000${log.original_path}` : undefined,
-          heatmap_path: log.heatmap_path ? `http://localhost:5000${log.heatmap_path}` : undefined,
+          original_path: log.original_path ? `${API_BASE_URL}${log.original_path}` : undefined,
+          heatmap_path: log.heatmap_path ? `${API_BASE_URL}${log.heatmap_path}` : undefined,
           doctor_review_status: log.doctor_review_status || 'pending',
           doctor_notes: log.doctor_notes || '',
           final_risk: log.final_risk || log.risk,
@@ -101,22 +103,25 @@ const HistoryTable = ({ limit }: HistoryTableProps) => {
   }, []);
 
   const handleExportCSV = () => {
-    window.open("http://localhost:5000/api/export_csv", "_blank");
+    const token = localStorage.getItem("token") || "";
+    window.open(`${API_BASE_URL}/api/export_csv?token=${encodeURIComponent(token)}`, "_blank");
   };
 
   const handleExportPDF = () => {
-    window.open("http://localhost:5000/api/export_pdf_summary?user_email=" + encodeURIComponent(user?.email || 'unknown'), "_blank");
+    const token = localStorage.getItem("token") || "";
+    window.open(`${API_BASE_URL}/api/export_pdf_summary?user_email=${encodeURIComponent(user?.email || 'unknown')}&token=${encodeURIComponent(token)}`, "_blank");
   };
 
   const handleExportSinglePDF = (id: string, lang: string) => {
-    window.open(`http://localhost:5000/api/history/${id}/pdf?lang=${lang}&user_email=${encodeURIComponent(user?.email || 'unknown')}`, '_blank');
+    const token = localStorage.getItem("token") || "";
+    window.open(`${API_BASE_URL}/api/history/${id}/pdf?lang=${lang}&user_email=${encodeURIComponent(user?.email || 'unknown')}&token=${encodeURIComponent(token)}`, '_blank');
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this report?")) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/history/${id}`, {
+      const response = await authenticatedFetch(`/api/history/${id}`, {
         method: 'DELETE'
       });
       if (response.ok) {
@@ -141,13 +146,14 @@ const HistoryTable = ({ limit }: HistoryTableProps) => {
     const finalRisk = status === "approved" ? selectedReport.risk : reviewRisk;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/history/${selectedReport.id}/review`, {
+      const response = await authenticatedFetch(`/api/history/${selectedReport.id}/review`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           review_status: status,
           doctor_notes: reviewNotes,
-          final_risk: finalRisk
+          final_risk: finalRisk,
+          doctor_email: user?.email || 'unknown'
         })
       });
 

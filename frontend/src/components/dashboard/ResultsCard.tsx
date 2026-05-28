@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { authenticatedFetch } from "@/lib/apiHelper";
+import { API_BASE_URL } from "@/lib/config";
 
 interface ResultsCardProps {
   result: {
@@ -199,7 +201,7 @@ const ResultsCard = ({ result }: ResultsCardProps) => {
       if (storedUser) {
         const user = JSON.parse(storedUser);
         if (user.email) {
-          const sigResponse = await fetch(`http://localhost:5000/api/auth/signature/${user.email}`);
+          const sigResponse = await authenticatedFetch(`/api/auth/signature/${user.email}`);
           const sigData = await sigResponse.json();
           if (sigData.success && sigData.signature) {
             // Only add new page if absolutely no room (need ~40px for signature block)

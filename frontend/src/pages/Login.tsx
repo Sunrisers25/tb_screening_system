@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+import { API_BASE_URL } from "@/lib/config";
+
 const Login = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -20,7 +22,7 @@ const Login = () => {
     const name = isLogin ? "" : (form.elements.namedItem('name') as HTMLInputElement).value;
     const role = isLogin ? "" : (form.elements.namedItem('role') as HTMLSelectElement).value;
 
-    const endpoint = isLogin ? "http://localhost:5000/api/auth/login" : "http://localhost:5000/api/auth/signup";
+    const endpoint = isLogin ? `${API_BASE_URL}/api/auth/login` : `${API_BASE_URL}/api/auth/signup`;
 
     try {
       const response = await fetch(endpoint, {
@@ -33,7 +35,8 @@ const Login = () => {
 
       if (data.success) {
         if (isLogin) {
-          // Store user info
+          // Store user info and auth token
+          localStorage.setItem('token', data.token);
           localStorage.setItem('user', JSON.stringify(data.user));
           navigate("/dashboard");
         } else {

@@ -4,13 +4,14 @@ Write-Host "Starting TB Screening System..." -ForegroundColor Cyan
 $RootDir = $PSScriptRoot
 
 # --- Start Backend ---
-$BackendScript = Join-Path $RootDir "backend.py"
+$BackendDir = Join-Path $RootDir "backend"
+$BackendScript = Join-Path $BackendDir "backend.py"
 Write-Host "Launching Backend Server (backend.py)..." -ForegroundColor Green
 # Start python in a new window
-Start-Process -FilePath "python" -ArgumentList """$BackendScript""" -WorkingDirectory $RootDir
+Start-Process -FilePath "python" -ArgumentList """$BackendScript""" -WorkingDirectory $BackendDir
 
 # --- Start Frontend ---
-$FrontendDir = Join-Path $RootDir "frontend_lovable\vitri-scan-ui-main"
+$FrontendDir = Join-Path $RootDir "frontend"
 Write-Host "Launching Frontend (npm run dev)..." -ForegroundColor Green
 # Start npm in a new window
 # We use cmd /c to ensure npm (which is a batch file on Windows) runs correctly via Start-Process

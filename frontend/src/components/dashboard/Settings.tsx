@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import SignaturePad from "./SignaturePad";
 import { Button } from "@/components/ui/button";
 
+import { authenticatedFetch } from "@/lib/apiHelper";
+
 const Settings = () => {
     const [user, setUser] = useState<{ name: string; email: string; role: string } | null>(null);
     const [pendingUsers, setPendingUsers] = useState<any[]>([]);
@@ -10,10 +12,10 @@ const Settings = () => {
 
     const fetchAdminData = async () => {
         try {
-            const usersRes = await fetch("http://localhost:5000/api/admin/users/pending");
+            const usersRes = await authenticatedFetch("/api/admin/users/pending");
             if (usersRes.ok) setPendingUsers(await usersRes.json());
             
-            const logsRes = await fetch("http://localhost:5000/api/audit_logs");
+            const logsRes = await authenticatedFetch("/api/audit_logs");
             if (logsRes.ok) setAuditLogs(await logsRes.json());
         } catch (e) {
             console.error("Failed to fetch admin data", e);
@@ -37,7 +39,7 @@ const Settings = () => {
 
     const handleApprove = async (email: string) => {
         try {
-            const res = await fetch("http://localhost:5000/api/admin/users/approve", {
+            const res = await authenticatedFetch("/api/admin/users/approve", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, admin_email: user?.email })
@@ -48,7 +50,7 @@ const Settings = () => {
 
     const handleReject = async (email: string) => {
         try {
-            const res = await fetch("http://localhost:5000/api/admin/users/reject", {
+            const res = await authenticatedFetch("/api/admin/users/reject", {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, admin_email: user?.email })
